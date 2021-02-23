@@ -45,6 +45,7 @@ public class RedisClient extends DB {
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Jedis jedis;
+  private Boolean clusterEnabled;
 
   public static final String HOST_PROPERTY = "redis.host";
   public static final String PORT_PROPERTY = "redis.port";
@@ -62,7 +63,7 @@ public class RedisClient extends DB {
 
     String redisTimeoutStr = props.getProperty(TIMEOUT_PROPERTY);
     String password = props.getProperty(PASSWORD_PROPERTY);
-    boolean clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
+    clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
     String portString = props.getProperty(PORT_PROPERTY);
     if (portString != null) {
       port = Integer.parseInt(portString);
@@ -87,7 +88,11 @@ public class RedisClient extends DB {
 
   public void cleanup() throws DBException {
     try {
-      ((Closeable) jedis).close();
+      if (clusterEnabled) {
+        ((Closeable) jedisCluster).close();
+      } else {
+        ((Closeable) jedis).close();
+      }
     } catch (IOException e) {
       throw new DBException("Closing connection failed.");
     }
@@ -109,9 +114,20 @@ public class RedisClient extends DB {
   public Status read(String table, String key, Set<String> fields,
       Map<String, ByteIterator> result) {
     if (fields == null) {
-      extractHGetAllResults(result, jedis.hgetAll(key));
+      Map<String, String> reply;
+      if (clusterEnabled) {
+        reply = jedisCluster.hgetAll(key);
+      } else {
+        reply = jedis.hgetAll(key);
+      }
+      extractHGetAllResults(result, reply);
     } else {
-      List<String> reply = jedis.hmget(key, fields.toArray(new String[fields.size()]));
+      List<String> reply;
+      if (clusterEnabled) {
+        reply = jedisCluster.hmget(key, fields.toArray(new String[fields.size()]));
+      } else {
+        reply = jedis.hmget(key, fields.toArray(new String[fields.size()]));
+      }
       extractHmGetResults(fields, result, reply);
     }
     return result.isEmpty() ? Status.ERROR : Status.OK;
@@ -135,7 +151,13 @@ public class RedisClient extends DB {
   @Override
   public Status insert(String table, String key,
       Map<String, ByteIterator> values) {
-    Pipeline p = jedis.pipelined();
+    Jedis j;
+    if (clusterEnabled) {
+      j = jedisCluster.getConnectionFromSlot(Math.toIntExact(jedis.clusterKeySlot(key)));
+    } else {
+      j = jedis;
+    }
+    Pipeline p = j.pipelined();
     p.hmset(key, StringByteIterator.getStringMap(values));
     p.zadd(INDEX_KEY, hash(key), key);
     List<Object> res = p.syncAndReturnAll();
@@ -145,7 +167,13 @@ public class RedisClient extends DB {
 
   @Override
   public Status delete(String table, String key) {
-    Pipeline p = jedis.pipelined();
+    Jedis j;
+    if (clusterEnabled) {
+      j = jedisCluster.getConnectionFromSlot(Math.toIntExact(jedis.clusterKeySlot(key)));
+    } else {
+      j = jedis;
+    }
+    Pipeline p = j.pipelined();
     p.del(key);
     p.zrem(INDEX_KEY, key);
     List<Object> res = p.syncAndReturnAll();
@@ -156,17 +184,28 @@ public class RedisClient extends DB {
   @Override
   public Status update(String table, String key,
       Map<String, ByteIterator> values) {
-    return jedis.hmset(key, StringByteIterator.getStringMap(values))
-        .equals("OK") ? Status.OK : Status.ERROR;
+    String res;
+    if (clusterEnabled) {
+      res = jedisCluster.hmset(key, StringByteIterator.getStringMap(values));
+    } else {
+      res = jedis.hmset(key, StringByteIterator.getStringMap(values));
+    }
+    return res.equals("OK") ? Status.OK : Status.ERROR;
   }
 
   @Override
   public Status scan(String table, String startkey, int recordcount,
       Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-    Set<String> keys = jedis.zrangeByScore(INDEX_KEY, hash(startkey),
+    Jedis j;
+    if (clusterEnabled) {
+      j = jedisCluster.getConnectionFromSlot(Math.toIntExact(jedis.clusterKeySlot(INDEX_KEY)));
+    } else {
+      j = jedis;
+    }
+    Set<String> keys = j.zrangeByScore(INDEX_KEY, hash(startkey),
         Double.POSITIVE_INFINITY, 0, recordcount);
     String[] fieldsArray = fields.toArray(new String[fields.size()]);
-    Pipeline p = jedis.pipelined();
+    Pipeline p = j.pipelined();
     if (fields == null) {
       for (String key : keys) {
         p.hgetAll(key);
