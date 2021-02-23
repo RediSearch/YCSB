@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2012 YCSB contributors. All rights reserved.
+ * Copyright (c) 2021 YCSB contributors. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you
  * may not use this file except in compliance with the License. You
@@ -24,28 +24,16 @@
 
 package site.ycsb.db;
 
+import redis.clients.jedis.*;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
-import redis.clients.jedis.BasicCommands;
-import redis.clients.jedis.HostAndPort;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisCluster;
-import redis.clients.jedis.JedisCommands;
-import redis.clients.jedis.Protocol;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Properties;
-import java.util.Set;
-import java.util.Vector;
+import java.util.*;
 
 /**
  * YCSB binding for <a href="http://redis.io/">Redis</a>.
@@ -54,7 +42,9 @@ import java.util.Vector;
  */
 public class RedisClient extends DB {
 
-  private JedisCommands jedis;
+  private JedisCluster jedisCluster;
+  private JedisPool jedisPool;
+  private Jedis jedis;
 
   public static final String HOST_PROPERTY = "redis.host";
   public static final String PORT_PROPERTY = "redis.port";
@@ -66,34 +56,32 @@ public class RedisClient extends DB {
 
   public void init() throws DBException {
     Properties props = getProperties();
-    int port;
+    int port = Protocol.DEFAULT_PORT;
+    String host = Protocol.DEFAULT_HOST;
+    int timeout = Protocol.DEFAULT_TIMEOUT;
 
+    String redisTimeoutStr = props.getProperty(TIMEOUT_PROPERTY);
+    String password = props.getProperty(PASSWORD_PROPERTY);
+    boolean clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
     String portString = props.getProperty(PORT_PROPERTY);
     if (portString != null) {
       port = Integer.parseInt(portString);
-    } else {
-      port = Protocol.DEFAULT_PORT;
     }
-    String host = props.getProperty(HOST_PROPERTY);
+    if (props.getProperty(HOST_PROPERTY) != null){
+      host = props.getProperty(HOST_PROPERTY);
+    }
+    if (redisTimeoutStr != null){
+      timeout = Integer.parseInt(redisTimeoutStr);
+    }
 
-    boolean clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
     if (clusterEnabled) {
       Set<HostAndPort> jedisClusterNodes = new HashSet<>();
       jedisClusterNodes.add(new HostAndPort(host, port));
-      jedis = new JedisCluster(jedisClusterNodes);
+      jedisCluster = new JedisCluster(jedisClusterNodes);
     } else {
-      String redisTimeout = props.getProperty(TIMEOUT_PROPERTY);
-      if (redisTimeout != null){
-        jedis = new Jedis(host, port, Integer.parseInt(redisTimeout));
-      } else {
-        jedis = new Jedis(host, port);
-      }
-      ((Jedis) jedis).connect();
-    }
-
-    String password = props.getProperty(PASSWORD_PROPERTY);
-    if (password != null) {
-      ((BasicCommands) jedis).auth(password);
+      JedisPoolConfig poolConfig = new JedisPoolConfig();
+      jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
+      jedis = jedisPool.getResource();
     }
   }
 
@@ -121,38 +109,47 @@ public class RedisClient extends DB {
   public Status read(String table, String key, Set<String> fields,
       Map<String, ByteIterator> result) {
     if (fields == null) {
-      StringByteIterator.putAllAsByteIterators(result, jedis.hgetAll(key));
+      extractHGetAllResults(result, jedis.hgetAll(key));
     } else {
-      String[] fieldArray =
-          (String[]) fields.toArray(new String[fields.size()]);
-      List<String> values = jedis.hmget(key, fieldArray);
-
-      Iterator<String> fieldIterator = fields.iterator();
-      Iterator<String> valueIterator = values.iterator();
-
-      while (fieldIterator.hasNext() && valueIterator.hasNext()) {
-        result.put(fieldIterator.next(),
-            new StringByteIterator(valueIterator.next()));
-      }
-      assert !fieldIterator.hasNext() && !valueIterator.hasNext();
+      List<String> reply = jedis.hmget(key, fields.toArray(new String[fields.size()]));
+      extractHmGetResults(fields, result, reply);
     }
     return result.isEmpty() ? Status.ERROR : Status.OK;
+  }
+
+  private void extractHGetAllResults(Map<String, ByteIterator> result, Map<String, String> reply) {
+    StringByteIterator.putAllAsByteIterators(result, reply);
+  }
+
+  private void extractHmGetResults(Set<String> fields, Map<String, ByteIterator> result, List<String> values) {
+    Iterator<String> fieldIterator = fields.iterator();
+    Iterator<String> valueIterator = values.iterator();
+
+    while (fieldIterator.hasNext() && valueIterator.hasNext()) {
+      result.put(fieldIterator.next(),
+          new StringByteIterator(valueIterator.next()));
+    }
+    assert !fieldIterator.hasNext() && !valueIterator.hasNext();
   }
 
   @Override
   public Status insert(String table, String key,
       Map<String, ByteIterator> values) {
-    if (jedis.hmset(key, StringByteIterator.getStringMap(values))
-        .equals("OK")) {
-      jedis.zadd(INDEX_KEY, hash(key), key);
-      return Status.OK;
-    }
-    return Status.ERROR;
+    Pipeline p = jedis.pipelined();
+    p.hmset(key, StringByteIterator.getStringMap(values));
+    p.zadd(INDEX_KEY, hash(key), key);
+    List<Object> res = p.syncAndReturnAll();
+    final Status status = res.get(0).equals("OK") ? Status.OK : Status.ERROR;
+    return status;
   }
 
   @Override
   public Status delete(String table, String key) {
-    return jedis.del(key) == 0 && jedis.zrem(INDEX_KEY, key) == 0 ? Status.ERROR
+    Pipeline p = jedis.pipelined();
+    p.del(key);
+    p.zrem(INDEX_KEY, key);
+    List<Object> res = p.syncAndReturnAll();
+    return res.get(0).equals(0) && res.get(1).equals(0) ? Status.ERROR
         : Status.OK;
   }
 
@@ -168,15 +165,31 @@ public class RedisClient extends DB {
       Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
     Set<String> keys = jedis.zrangeByScore(INDEX_KEY, hash(startkey),
         Double.POSITIVE_INFINITY, 0, recordcount);
-
-    HashMap<String, ByteIterator> values;
-    for (String key : keys) {
-      values = new HashMap<String, ByteIterator>();
-      read(table, key, fields, values);
-      result.add(values);
+    String[] fieldsArray = fields.toArray(new String[fields.size()]);
+    Pipeline p = jedis.pipelined();
+    if (fields == null) {
+      for (String key : keys) {
+        p.hgetAll(key);
+      }
+    } else {
+      for (String key : keys) {
+        p.hmget(key, fieldsArray);
+      }
     }
-
+    List<Object> res = p.syncAndReturnAll();
+    if (fields == null) {
+      for (Object reply: res) {
+        HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
+        extractHGetAllResults(values, (Map<String, String>) reply);
+        result.add(values);
+      }
+    } else {
+      for (Object reply: res) {
+        HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
+        extractHmGetResults(fields, values, (List<String>) reply);
+        result.add(values);
+      }
+    }
     return Status.OK;
   }
-
 }
