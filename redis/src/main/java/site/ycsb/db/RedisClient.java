@@ -204,13 +204,13 @@ public class RedisClient extends DB {
     }
     Set<String> keys = j.zrangeByScore(INDEX_KEY, hash(startkey),
         Double.POSITIVE_INFINITY, 0, recordcount);
-    String[] fieldsArray = fields.toArray(new String[fields.size()]);
     Pipeline p = j.pipelined();
     if (fields == null) {
       for (String key : keys) {
         p.hgetAll(key);
       }
     } else {
+      String[] fieldsArray = fields.toArray(new String[fields.size()]);
       for (String key : keys) {
         p.hmget(key, fieldsArray);
       }
