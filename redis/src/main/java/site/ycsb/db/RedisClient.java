@@ -25,6 +25,7 @@
 package site.ycsb.db;
 
 import redis.clients.jedis.*;
+import redis.clients.jedis.util.JedisClusterCRC16;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
@@ -44,7 +45,6 @@ public class RedisClient extends DB {
 
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
-  private Jedis jedis;
   private Boolean clusterEnabled;
 
   public static final String HOST_PROPERTY = "redis.host";
@@ -75,14 +75,13 @@ public class RedisClient extends DB {
       timeout = Integer.parseInt(redisTimeoutStr);
     }
 
+    JedisPoolConfig poolConfig = new JedisPoolConfig();
     if (clusterEnabled) {
       Set<HostAndPort> jedisClusterNodes = new HashSet<>();
       jedisClusterNodes.add(new HostAndPort(host, port));
-      jedisCluster = new JedisCluster(jedisClusterNodes);
+      jedisCluster = new JedisCluster(jedisClusterNodes, timeout, timeout, 5, poolConfig);
     } else {
-      JedisPoolConfig poolConfig = new JedisPoolConfig();
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
-      jedis = jedisPool.getResource();
     }
   }
 
@@ -91,7 +90,7 @@ public class RedisClient extends DB {
       if (clusterEnabled) {
         ((Closeable) jedisCluster).close();
       } else {
-        ((Closeable) jedis).close();
+        ((Closeable) jedisPool).close();
       }
     } catch (IOException e) {
       throw new DBException("Closing connection failed.");
@@ -118,7 +117,9 @@ public class RedisClient extends DB {
       if (clusterEnabled) {
         reply = jedisCluster.hgetAll(key);
       } else {
-        reply = jedis.hgetAll(key);
+        try (Jedis jedis = jedisPool.getResource()) {
+          reply = jedis.hgetAll(key);
+        }
       }
       extractHGetAllResults(result, reply);
     } else {
@@ -126,7 +127,9 @@ public class RedisClient extends DB {
       if (clusterEnabled) {
         reply = jedisCluster.hmget(key, fields.toArray(new String[fields.size()]));
       } else {
-        reply = jedis.hmget(key, fields.toArray(new String[fields.size()]));
+        try (Jedis jedis = jedisPool.getResource()) {
+          reply = jedis.hmget(key, fields.toArray(new String[fields.size()]));
+        }
       }
       extractHmGetResults(fields, result, reply);
     }
@@ -153,32 +156,40 @@ public class RedisClient extends DB {
       Map<String, ByteIterator> values) {
     Jedis j;
     if (clusterEnabled) {
-      j = jedisCluster.getConnectionFromSlot(Math.toIntExact(jedis.clusterKeySlot(key)));
+      j = jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
     } else {
-      j = jedis;
+      j = jedisPool.getResource();
     }
-    Pipeline p = j.pipelined();
-    p.hmset(key, StringByteIterator.getStringMap(values));
-    p.zadd(INDEX_KEY, hash(key), key);
-    List<Object> res = p.syncAndReturnAll();
-    final Status status = res.get(0).equals("OK") ? Status.OK : Status.ERROR;
-    return status;
+    try {
+      Pipeline p = j.pipelined();
+      p.hmset(key, StringByteIterator.getStringMap(values));
+      p.zadd(INDEX_KEY, hash(key), key);
+      List<Object> res = p.syncAndReturnAll();
+      final Status status = res.get(0).equals("OK") ? Status.OK : Status.ERROR;
+      return status;
+    } finally {
+      j.close();
+    }
   }
 
   @Override
   public Status delete(String table, String key) {
     Jedis j;
     if (clusterEnabled) {
-      j = jedisCluster.getConnectionFromSlot(Math.toIntExact(jedis.clusterKeySlot(key)));
+      j = jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
     } else {
-      j = jedis;
+      j = jedisPool.getResource();
     }
-    Pipeline p = j.pipelined();
-    p.del(key);
-    p.zrem(INDEX_KEY, key);
-    List<Object> res = p.syncAndReturnAll();
-    return res.get(0).equals(0) && res.get(1).equals(0) ? Status.ERROR
-        : Status.OK;
+    try {
+      Pipeline p = j.pipelined();
+      p.del(key);
+      p.zrem(INDEX_KEY, key);
+      List<Object> res = p.syncAndReturnAll();
+      return res.get(0).equals(0) && res.get(1).equals(0) ? Status.ERROR
+          : Status.OK;
+    } finally {
+      j.close();
+    }
   }
 
   @Override
@@ -188,7 +199,9 @@ public class RedisClient extends DB {
     if (clusterEnabled) {
       res = jedisCluster.hmset(key, StringByteIterator.getStringMap(values));
     } else {
-      res = jedis.hmset(key, StringByteIterator.getStringMap(values));
+      try (Jedis jedis = jedisPool.getResource()) {
+        res = jedis.hmset(key, StringByteIterator.getStringMap(values));
+      }
     }
     return res.equals("OK") ? Status.OK : Status.ERROR;
   }
@@ -198,37 +211,41 @@ public class RedisClient extends DB {
       Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
     Jedis j;
     if (clusterEnabled) {
-      j = jedisCluster.getConnectionFromSlot(Math.toIntExact(jedis.clusterKeySlot(INDEX_KEY)));
+      j = jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(INDEX_KEY));
     } else {
-      j = jedis;
+      j = jedisPool.getResource();
     }
-    Set<String> keys = j.zrangeByScore(INDEX_KEY, hash(startkey),
-        Double.POSITIVE_INFINITY, 0, recordcount);
-    Pipeline p = j.pipelined();
-    if (fields == null) {
-      for (String key : keys) {
-        p.hgetAll(key);
+    try {
+      Set<String> keys = j.zrangeByScore(INDEX_KEY, hash(startkey),
+          Double.POSITIVE_INFINITY, 0, recordcount);
+      Pipeline p = j.pipelined();
+      if (fields == null) {
+        for (String key : keys) {
+          p.hgetAll(key);
+        }
+      } else {
+        String[] fieldsArray = fields.toArray(new String[fields.size()]);
+        for (String key : keys) {
+          p.hmget(key, fieldsArray);
+        }
       }
-    } else {
-      String[] fieldsArray = fields.toArray(new String[fields.size()]);
-      for (String key : keys) {
-        p.hmget(key, fieldsArray);
+      List<Object> res = p.syncAndReturnAll();
+      if (fields == null) {
+        for (Object reply : res) {
+          HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
+          extractHGetAllResults(values, (Map<String, String>) reply);
+          result.add(values);
+        }
+      } else {
+        for (Object reply : res) {
+          HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
+          extractHmGetResults(fields, values, (List<String>) reply);
+          result.add(values);
+        }
       }
+      return Status.OK;
+    } finally {
+      j.close();
     }
-    List<Object> res = p.syncAndReturnAll();
-    if (fields == null) {
-      for (Object reply: res) {
-        HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
-        extractHGetAllResults(values, (Map<String, String>) reply);
-        result.add(values);
-      }
-    } else {
-      for (Object reply: res) {
-        HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
-        extractHmGetResults(fields, values, (List<String>) reply);
-        result.add(values);
-      }
-    }
-    return Status.OK;
   }
 }
