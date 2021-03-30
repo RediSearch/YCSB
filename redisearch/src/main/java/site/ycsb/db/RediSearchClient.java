@@ -54,6 +54,8 @@ public class RediSearchClient extends DB {
   private String fieldPrefix;
   private String indexName;
   private String rangeField;
+  private boolean orderedinserts;
+  private String keyprefix;
 
   @Override
   public void init() throws DBException {
@@ -68,12 +70,15 @@ public class RediSearchClient extends DB {
     String portString = props.getProperty(PORT_PROPERTY);
     indexName = props.getProperty(INDEX_NAME_PROPERTY, INDEX_NAME_PROPERTY_DEFAULT);
     rangeField = props.getProperty(RANGE_FIELD_NAME_PROPERTY, RANGE_FIELD_NAME_PROPERTY_DEFAULT);
+    keyprefix = "user";
     if (portString != null) {
       port = Integer.parseInt(portString);
     }
-    if (props.getProperty(HOST_PROPERTY) != null) {
-      host = props.getProperty(HOST_PROPERTY);
-    }
+    orderedinserts = props.getProperty(CoreWorkload.INSERT_ORDER_PROPERTY).compareTo("ordered") == 0;
+    if (props.getProperty(CoreWorkload.INSERT_ORDER_PROPERTY) == "")
+      if (props.getProperty(HOST_PROPERTY) != null) {
+        host = props.getProperty(HOST_PROPERTY);
+      }
     if (redisTimeoutStr != null) {
       timeout = Integer.parseInt(redisTimeoutStr);
     }
@@ -160,7 +165,11 @@ public class RediSearchClient extends DB {
    * would probably use the ASCII values of the keys.
    */
   private int hash(String key) {
-    return key.hashCode();
+    if (orderedinserts) {
+      return Integer.parseInt(key.replaceAll(keyprefix, ""));
+    } else {
+      return key.hashCode();
+    }
   }
 
   @Override
@@ -281,22 +290,26 @@ public class RediSearchClient extends DB {
   /**
    * Helpher method to create the FT.SEARCH args used for the scan() operation.
    *
-   * @param iName   RediSearch index name
-   * @param rCount  return count
-   * @param sKey    start key
-   * @param rFields fields to retrieve
+   * @param iName      RediSearch index name
+   * @param rCount     return count
+   * @param rangeStart numeric range start
+   * @param rangeEnd   numeric range end
+   * @param rFields    fields to retrieve
    * @return
    */
-  private String[] scanCommandArgs(String iName, int rCount, String sKey, Set<String> rFields) {
+  private String[] scanCommandArgs(String iName, int rCount, int rangeStart, int rangeEnd, Set<String> rFields,
+                                   boolean orderedinserts) {
     int returnFieldsCount = fieldCount;
     if (rFields != null) {
       returnFieldsCount = rFields.size();
     }
     List<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
-        String.format("@%s:[%d +inf]", rangeField, hash(sKey)),
-        "LIMIT", "0", String.valueOf(rCount),
-        "FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC",
-        "LOAD", String.valueOf(returnFieldsCount)));
+        String.format("@%s:[%d %d]", rangeField, rangeStart, rangeEnd),
+        "LIMIT", "0", String.valueOf(rCount), "FIRST"));
+    if (!orderedinserts) {
+      scanSearchArgs.addAll(new ArrayList<>("FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC"));
+    }
+    scanSearchArgs.addAll(new ArrayList<>("LOAD", String.valueOf(returnFieldsCount)));
 
     if (rFields == null) {
       for (int i = 0; i < returnFieldsCount; i++) {
