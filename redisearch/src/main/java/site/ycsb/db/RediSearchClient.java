@@ -80,7 +80,17 @@ public class RediSearchClient extends DB {
 
     JedisPoolConfig poolConfig = new JedisPoolConfig();
     if (clusterEnabled) {
-      Set<HostAndPort> startNodes = Collections.singleton(new HostAndPort(host, port));
+      Set<HostAndPort> startNodes = new HashSet<>(Collections.emptySet());
+      jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
+      List<Object> clusterNodes = jedisPool.getResource().clusterSlots();
+      for (Object slotDetail : clusterNodes
+      ) {
+        List<Object> nodeDetail = (List<Object>) ((List<Object>) slotDetail).get(2);
+        String h = new String((byte[]) nodeDetail.get(0));
+        long p = (long) nodeDetail.get(1);
+//        System.out.println(h + " : " + p);
+        startNodes.add(new HostAndPort(h, (int) p));
+      }
       jedisCluster = new JedisCluster(startNodes, timeout, timeout, 5, password, poolConfig);
     } else {
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
@@ -125,8 +135,8 @@ public class RediSearchClient extends DB {
    * @return
    */
   private List<String> indexCreateCmdArgs(String iName) {
-    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH", "SCORE_FIELD", scoreField,
-        "SCHEMA", scoreField, "NUMERIC"));
+    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
+        "SCHEMA", scoreField, "NUMERIC", "SORTABLE"));
     return args;
   }
 
@@ -146,11 +156,11 @@ public class RediSearchClient extends DB {
   /*
    * Calculate a hash for a key to store it in an index. The actual return value
    * of this function is not interesting -- it primarily needs to be fast and
-   * scattered along the whole space of doubles. In a real world scenario one
+   * scattered along the whole space of int's. In a real world scenario one
    * would probably use the ASCII values of the keys.
    */
-  private double hash(String key) {
-    return key.hashCode() / Double.MAX_VALUE;
+  private int hash(String key) {
+    return key.hashCode();
   }
 
   @Override
@@ -189,7 +199,7 @@ public class RediSearchClient extends DB {
                        Map<String, ByteIterator> values) {
     values.put(scoreField, new StringByteIterator(String.valueOf(hash(key))));
     try (Jedis j = getResource(key)) {
-      j.hmset(key, StringByteIterator.getStringMap(values));
+      j.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
     } catch (Exception e) {
       throw e;
@@ -211,7 +221,7 @@ public class RediSearchClient extends DB {
   public Status update(String table, String key,
                        Map<String, ByteIterator> values) {
     try (Jedis j = getResource(key)) {
-      j.hmset(key, StringByteIterator.getStringMap(values));
+      j.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
     } catch (Exception e) {
       return Status.ERROR;
@@ -250,7 +260,7 @@ public class RediSearchClient extends DB {
                      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
     List<Object> resp;
     try (Jedis j = getResource(startkey)) {
-      resp = (List<Object>) j.sendCommand(RediSearchCommands.SEARCH,
+      resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
           scanCommandArgs(indexName, recordcount, startkey, fields));
     } catch (Exception e) {
       return Status.ERROR;
@@ -283,13 +293,14 @@ public class RediSearchClient extends DB {
     if (rFields != null) {
       returnFieldsCount = rFields.size();
     }
-    List<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName, "*",
-        "FILTER", scoreField, Double.toString(hash(sKey)), "+inf",
+    List<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
+        String.format("@%s:[%f +inf]", scoreField, hash(sKey)),
         "LIMIT", "0", String.valueOf(rCount),
-        "RETURN", String.valueOf(returnFieldsCount)));
+        "FIRST", "SORTBY", "2", String.format("@%s", scoreField), "DESC",
+        "LOAD", String.valueOf(returnFieldsCount)));
 
     if (rFields == null) {
-      for (int i = 0; i < fieldCount; i++) {
+      for (int i = 0; i < returnFieldsCount; i++) {
         scanSearchArgs.add(String.format("%s%d", fieldPrefix, i));
       }
     } else {
@@ -306,6 +317,7 @@ public class RediSearchClient extends DB {
   public enum RediSearchCommands implements ProtocolCommand {
 
     CREATE,
+    AGGREGATE,
     SEARCH;
 
     private final byte[] raw;
