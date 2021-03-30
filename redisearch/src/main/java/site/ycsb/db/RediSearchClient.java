@@ -45,15 +45,15 @@ public class RediSearchClient extends DB {
   public static final String TIMEOUT_PROPERTY = "redisearch.timeout";
   public static final String INDEX_NAME_PROPERTY = "redisearch.indexname";
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
-  public static final String SCORE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
-  public static final String SCORE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
+  public static final String RANGE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
+  public static final String RANGE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
   private int fieldCount;
   private String fieldPrefix;
   private String indexName;
-  private String scoreField;
+  private String rangeField;
 
   @Override
   public void init() throws DBException {
@@ -67,7 +67,7 @@ public class RediSearchClient extends DB {
     clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
     String portString = props.getProperty(PORT_PROPERTY);
     indexName = props.getProperty(INDEX_NAME_PROPERTY, INDEX_NAME_PROPERTY_DEFAULT);
-    scoreField = props.getProperty(SCORE_FIELD_NAME_PROPERTY, SCORE_FIELD_NAME_PROPERTY_DEFAULT);
+    rangeField = props.getProperty(RANGE_FIELD_NAME_PROPERTY, RANGE_FIELD_NAME_PROPERTY_DEFAULT);
     if (portString != null) {
       port = Integer.parseInt(portString);
     }
@@ -136,7 +136,7 @@ public class RediSearchClient extends DB {
    */
   private List<String> indexCreateCmdArgs(String iName) {
     List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
-        "SCHEMA", scoreField, "NUMERIC", "SORTABLE"));
+        "SCHEMA", rangeField, "NUMERIC", "SORTABLE"));
     return args;
   }
 
@@ -197,7 +197,7 @@ public class RediSearchClient extends DB {
   @Override
   public Status insert(String table, String key,
                        Map<String, ByteIterator> values) {
-    values.put(scoreField, new StringByteIterator(String.valueOf(hash(key))));
+    values.put(rangeField, new StringByteIterator(String.valueOf(hash(key))));
     try (Jedis j = getResource(key)) {
       j.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
@@ -266,11 +266,10 @@ public class RediSearchClient extends DB {
       return Status.ERROR;
     }
     long totalResult = (long) resp.get(0);
-    for (int i = 1; i < resp.size(); i += 2) {
-      String docname = new String((byte[]) resp.get(i));
-      List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
+    for (int i = 1; i < resp.size(); i++) {
+      List<byte[]> docFields = (List<byte[]>) resp.get(i);
       HashMap<String, ByteIterator> values = new HashMap<>();
-      for (int k = 0; k < docFields.size(); k += 2) {
+      for (int k = 2; k < docFields.size(); k += 2) {
         values.put(SafeEncoder.encode(docFields.get(k)),
             new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
         result.add(values);
@@ -294,9 +293,9 @@ public class RediSearchClient extends DB {
       returnFieldsCount = rFields.size();
     }
     List<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
-        String.format("@%s:[%f +inf]", scoreField, hash(sKey)),
+        String.format("@%s:[%d +inf]", rangeField, hash(sKey)),
         "LIMIT", "0", String.valueOf(rCount),
-        "FIRST", "SORTBY", "2", String.format("@%s", scoreField), "DESC",
+        "FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC",
         "LOAD", String.valueOf(returnFieldsCount)));
 
     if (rFields == null) {
