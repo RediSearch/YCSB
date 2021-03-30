@@ -29,9 +29,8 @@ import redis.clients.jedis.util.SafeEncoder;
 import site.ycsb.*;
 import site.ycsb.workloads.CoreWorkload;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * YCSB binding for <a href="https://github.com/RediSearch/RediSearch/">RediSearch</a>.
@@ -47,7 +46,7 @@ public class RediSearchClient extends DB {
   public static final String INDEX_NAME_PROPERTY = "redisearch.indexname";
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
   public static final String SCORE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
-  public static final String SCORE_FIELD_NAME_PROPERTY_DEFAULT = "__score__";
+  public static final String SCORE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
@@ -56,6 +55,7 @@ public class RediSearchClient extends DB {
   private String indexName;
   private String scoreField;
 
+  @Override
   public void init() throws DBException {
     Properties props = getProperties();
     int port = Protocol.DEFAULT_PORT;
@@ -78,28 +78,43 @@ public class RediSearchClient extends DB {
       timeout = Integer.parseInt(redisTimeoutStr);
     }
 
-    Jedis setupPoolConn;
     JedisPoolConfig poolConfig = new JedisPoolConfig();
     if (clusterEnabled) {
-      Set<HostAndPort> jedisClusterNodes = new HashSet<>();
-      jedisClusterNodes.add(new HostAndPort(host, port));
-      jedisCluster = new JedisCluster(jedisClusterNodes, timeout, timeout, 5, poolConfig);
-      setupPoolConn = jedisCluster.getConnectionFromSlot(1);
+      Set<HostAndPort> startNodes = Collections.singleton(new HostAndPort(host, port));
+      jedisCluster = new JedisCluster(startNodes, timeout, timeout, 5, password, poolConfig);
     } else {
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
-      setupPoolConn = jedisPool.getResource();
     }
+
     fieldCount = Integer.parseInt(props.getProperty(
         CoreWorkload.FIELD_COUNT_PROPERTY, CoreWorkload.FIELD_COUNT_PROPERTY_DEFAULT));
     fieldPrefix = props.getProperty(
         CoreWorkload.FIELD_NAME_PREFIX, CoreWorkload.FIELD_NAME_PREFIX_DEFAULT);
-    try {
-      List<String> indexCreateCmdArgs = indexCreateCmdArgs(indexName);
+    List<String> indexCreateCmdArgs = indexCreateCmdArgs(indexName);
+
+    try (Jedis setupPoolConn = getResource()) {
       setupPoolConn.sendCommand(RediSearchCommands.CREATE, indexCreateCmdArgs.toArray(String[]::new));
     } catch (redis.clients.jedis.exceptions.JedisDataException e) {
       if (!e.getMessage().contains("Index already exists")) {
         throw new DBException(e.getMessage());
       }
+    }
+  }
+
+  private Jedis getResource() {
+    if (clusterEnabled) {
+      return jedisCluster.getConnectionFromSlot(ThreadLocalRandom.current()
+          .nextInt(JedisCluster.HASHSLOTS));
+    } else {
+      return jedisPool.getResource();
+    }
+  }
+
+  private Jedis getResource(String key) {
+    if (clusterEnabled) {
+      return jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
+    } else {
+      return jedisPool.getResource();
     }
   }
 
@@ -115,16 +130,16 @@ public class RediSearchClient extends DB {
     return args;
   }
 
-
+  @Override
   public void cleanup() throws DBException {
     try {
       if (clusterEnabled) {
-        ((Closeable) jedisCluster).close();
+        jedisCluster.close();
       } else {
-        ((Closeable) jedisPool).close();
+        jedisPool.close();
       }
-    } catch (IOException e) {
-      throw new DBException("Closing connection failed.");
+    } catch (Exception e) {
+      throw new DBException("Closing connection failed.", e);
     }
   }
 
@@ -141,26 +156,16 @@ public class RediSearchClient extends DB {
   @Override
   public Status read(String table, String key, Set<String> fields,
                      Map<String, ByteIterator> result) {
-    if (fields == null) {
-      Map<String, String> reply;
-      if (clusterEnabled) {
-        reply = jedisCluster.hgetAll(key);
+    try (Jedis j = getResource(key)) {
+      if (fields == null) {
+        Map<String, String> reply = j.hgetAll(key);
+        extractHGetAllResults(result, reply);
       } else {
-        try (Jedis jedis = jedisPool.getResource()) {
-          reply = jedis.hgetAll(key);
-        }
+        List<String> reply = j.hmget(key, fields.toArray(new String[fields.size()]));
+        extractHmGetResults(fields, result, reply);
       }
-      extractHGetAllResults(result, reply);
-    } else {
-      List<String> reply;
-      if (clusterEnabled) {
-        reply = jedisCluster.hmget(key, fields.toArray(new String[fields.size()]));
-      } else {
-        try (Jedis jedis = jedisPool.getResource()) {
-          reply = jedis.hmget(key, fields.toArray(new String[fields.size()]));
-        }
-      }
-      extractHmGetResults(fields, result, reply);
+    } catch (Exception e) {
+      return Status.ERROR;
     }
     return result.isEmpty() ? Status.ERROR : Status.OK;
   }
@@ -182,45 +187,34 @@ public class RediSearchClient extends DB {
   @Override
   public Status insert(String table, String key,
                        Map<String, ByteIterator> values) {
-    Jedis j;
-    if (clusterEnabled) {
-      j = jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
-    } else {
-      j = jedisPool.getResource();
-    }
-    try {
-      values.put(scoreField, new StringByteIterator(String.valueOf(hash(key))));
-      return j.hmset(key, StringByteIterator.getStringMap(values)).equals("OK") ? Status.OK : Status.ERROR;
-    } finally {
-      j.close();
+    values.put(scoreField, new StringByteIterator(String.valueOf(hash(key))));
+    try (Jedis j = getResource(key)) {
+      j.hmset(key, StringByteIterator.getStringMap(values));
+      return Status.OK;
+    } catch (Exception e) {
+      return Status.ERROR;
     }
   }
 
   @Override
   public Status delete(String table, String key) {
-    long res;
-    if (clusterEnabled) {
-      res = jedisCluster.del(key);
-    } else {
-      try (Jedis jedis = jedisPool.getResource()) {
-        res = jedis.del(key);
-      }
+    try (Jedis j = getResource(key)) {
+      j.del(key);
+      return Status.OK;
+    } catch (Exception e) {
+      return Status.ERROR;
     }
-    return res == 0 ? Status.OK : Status.ERROR;
   }
 
   @Override
   public Status update(String table, String key,
                        Map<String, ByteIterator> values) {
-    String res;
-    if (clusterEnabled) {
-      res = jedisCluster.hmset(key, StringByteIterator.getStringMap(values));
-    } else {
-      try (Jedis jedis = jedisPool.getResource()) {
-        res = jedis.hmset(key, StringByteIterator.getStringMap(values));
-      }
+    try (Jedis j = getResource(key)) {
+      j.hmset(key, StringByteIterator.getStringMap(values));
+      return Status.OK;
+    } catch (Exception e) {
+      return Status.ERROR;
     }
-    return res.equals("OK") ? Status.OK : Status.ERROR;
   }
 
   /**
@@ -253,35 +247,26 @@ public class RediSearchClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount,
                      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-    Jedis j;
-    Status status = Status.OK;
-    if (clusterEnabled) {
-      j = jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(startkey));
-    } else {
-      j = jedisPool.getResource();
-    }
-    try {
-      List<Object> resp = (List<Object>) j.sendCommand(RediSearchCommands.SEARCH,
+    List<Object> resp;
+    try (Jedis j = getResource(startkey)) {
+      resp = (List<Object>) j.sendCommand(RediSearchCommands.SEARCH,
           scanCommandArgs(indexName, recordcount, startkey, fields));
-      long totalResult = (long) resp.get(0);
-      for (int i = 1; i < resp.size(); i += 2) {
-        String docname = new String((byte[]) resp.get(i));
-        List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
-        HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
-        for (int k = 0; k < docFields.size(); k += 2) {
-          values.put(SafeEncoder.encode(docFields.get(k)),
-              new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
-          result.add(values);
-        }
-      }
-    } catch (redis.clients.jedis.exceptions.JedisDataException e) {
-      status = Status.ERROR;
-    } finally {
-      j.close();
+    } catch (Exception e) {
+      return Status.ERROR;
     }
-    return status;
+    long totalResult = (long) resp.get(0);
+    for (int i = 1; i < resp.size(); i += 2) {
+      String docname = new String((byte[]) resp.get(i));
+      List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
+      HashMap<String, ByteIterator> values = new HashMap<>();
+      for (int k = 0; k < docFields.size(); k += 2) {
+        values.put(SafeEncoder.encode(docFields.get(k)),
+            new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
+        result.add(values);
+      }
+    }
+    return Status.OK;
   }
-
 
   /**
    * Helpher method to create the FT.SEARCH args used for the scan() operation.
@@ -318,13 +303,17 @@ public class RediSearchClient extends DB {
    * RediSearch Protocol commands.
    */
   public enum RediSearchCommands implements ProtocolCommand {
+
     CREATE,
     SEARCH;
-    private final byte[] raw = SafeEncoder.encode("FT." + this.name());
+
+    private final byte[] raw;
 
     RediSearchCommands() {
+      this.raw = SafeEncoder.encode("FT." + name());
     }
 
+    @Override
     public byte[] getRaw() {
       return this.raw;
     }
