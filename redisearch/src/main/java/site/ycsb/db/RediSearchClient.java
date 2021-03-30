@@ -75,10 +75,9 @@ public class RediSearchClient extends DB {
       port = Integer.parseInt(portString);
     }
     orderedinserts = props.getProperty(CoreWorkload.INSERT_ORDER_PROPERTY).compareTo("ordered") == 0;
-    if (props.getProperty(CoreWorkload.INSERT_ORDER_PROPERTY) == "")
-      if (props.getProperty(HOST_PROPERTY) != null) {
-        host = props.getProperty(HOST_PROPERTY);
-      }
+    if (props.getProperty(HOST_PROPERTY) != null) {
+      host = props.getProperty(HOST_PROPERTY);
+    }
     if (redisTimeoutStr != null) {
       timeout = Integer.parseInt(redisTimeoutStr);
     }
@@ -269,8 +268,10 @@ public class RediSearchClient extends DB {
                      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
     List<Object> resp;
     try (Jedis j = getResource(startkey)) {
+      int rangeStart = hash(startkey);
+      int rangeEnd = Integer.MAX_VALUE;
       resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
-          scanCommandArgs(indexName, recordcount, startkey, fields));
+          scanCommandArgs(indexName, recordcount, rangeStart, rangeEnd, fields));
     } catch (Exception e) {
       return Status.ERROR;
     }
@@ -297,19 +298,18 @@ public class RediSearchClient extends DB {
    * @param rFields    fields to retrieve
    * @return
    */
-  private String[] scanCommandArgs(String iName, int rCount, int rangeStart, int rangeEnd, Set<String> rFields,
-                                   boolean orderedinserts) {
+  private String[] scanCommandArgs(String iName, int rCount, int rangeStart, int rangeEnd, Set<String> rFields) {
     int returnFieldsCount = fieldCount;
     if (rFields != null) {
       returnFieldsCount = rFields.size();
     }
-    List<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
+    ArrayList<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
         String.format("@%s:[%d %d]", rangeField, rangeStart, rangeEnd),
         "LIMIT", "0", String.valueOf(rCount), "FIRST"));
     if (!orderedinserts) {
-      scanSearchArgs.addAll(new ArrayList<>("FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC"));
+      scanSearchArgs.addAll(Arrays.asList("FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC"));
     }
-    scanSearchArgs.addAll(new ArrayList<>("LOAD", String.valueOf(returnFieldsCount)));
+    scanSearchArgs.addAll(Arrays.asList("LOAD", String.valueOf(returnFieldsCount)));
 
     if (rFields == null) {
       for (int i = 0; i < returnFieldsCount; i++) {
