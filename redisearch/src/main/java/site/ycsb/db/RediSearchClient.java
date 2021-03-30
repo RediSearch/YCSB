@@ -270,6 +270,9 @@ public class RediSearchClient extends DB {
     try (Jedis j = getResource(startkey)) {
       int rangeStart = hash(startkey);
       int rangeEnd = Integer.MAX_VALUE;
+      if (orderedinserts) {
+        rangeEnd = rangeStart + recordcount;
+      }
       resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
           scanCommandArgs(indexName, recordcount, rangeStart, rangeEnd, fields));
     } catch (Exception e) {
