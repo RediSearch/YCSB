@@ -87,8 +87,8 @@ Load the database, using workload A’s parameter file (workloads/workloada) and
 
 redis-cli flushall
 
-./bin/ycsb load redisearch -s -P workloads/workloade -p "redisearch.host=127.0.0.1" -p "redisearch.port=6379" -p "threadcount=8" > outputLoad.txt
-./bin/ycsb run redisearch -s -P workloads/workloade -p "redisearch.host=127.0.0.1" -p "redisearch.port=6379" -p "threadcount=8" > outputRunE.txt
+./bin/ycsb load redisearch -s -P workloads/workloade -p "redisearch.host=127.0.0.1" -p "redisearch.port=6379" -p "threadcount=32" -p "recordcount=30000000" -p "operationcount=30000000" > outputLoad.txt
+./bin/ycsb run redisearch -s -P workloads/workloade -p "redisearch.host=127.0.0.1" -p "redisearch.port=6379" -p "threadcount=32" -p "recordcount=30000000" -p "operationcount=30000000" > outputRunE.txt
 ```
 
 
