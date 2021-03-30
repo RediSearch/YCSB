@@ -106,14 +106,12 @@ public class RediSearchClient extends DB {
   /**
    * Helper method to create the FT.CREATE command arguments, used to add a secondary index definition to Redis.
    *
-   * @param iName   Index name
-   * @param fCount  fields count
-   * @param fPrefix fields prefix
+   * @param iName Index name
    * @return
    */
   private List<String> indexCreateCmdArgs(String iName) {
     List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH", "SCORE_FIELD", scoreField,
-        "SCHEMA", scoreField, "NUMERIC", "SORTABLE"));
+        "SCHEMA", scoreField, "NUMERIC"));
     return args;
   }
 
@@ -191,7 +189,7 @@ public class RediSearchClient extends DB {
       j = jedisPool.getResource();
     }
     try {
-      values.put("__score__", new StringByteIterator(String.valueOf(hash(key))));
+      values.put(scoreField, new StringByteIterator(String.valueOf(hash(key))));
       return j.hmset(key, StringByteIterator.getStringMap(values)).equals("OK") ? Status.OK : Status.ERROR;
     } finally {
       j.close();
@@ -233,17 +231,17 @@ public class RediSearchClient extends DB {
    * To model this within RedisSearch, we use FT.SEARCH and use computed hash score from the key name as the lower limit
    * for the search query, and set +inf as the upper limit of the search result.
    * The provided record count is passed via the LIMIT 0 <recordcound> FT.SEARCH argument.
-   *
+   * <p>
    * Together, the above FT.SEARCH command arguments fully comply with a sorted, randomly chosen starting key, with
    * variadic record count replies.
    * <p>
    * Example FT.SEARCH command that a scan operation would generate.
    * "FT.SEARCH" "index" "*" \
-   *                     "FILTER" __score__ "-6.17979116E8" +inf \
-   *                     "LIMIT" "0" "54" \
-   *                     "RETURN" "10" \
-   *                              "field0" "field1" "field2" "field3" "field4" \
-   *                              "field5" "field6" "field7" "field8" "field9"
+   * "FILTER" __score__ "-6.17979116E8" +inf \
+   * "LIMIT" "0" "54" \
+   * "RETURN" "10" \
+   * "field0" "field1" "field2" "field3" "field4" \
+   * "field5" "field6" "field7" "field8" "field9"
    *
    * @param table       The name of the table
    * @param startkey    The record key of the first record to read.
