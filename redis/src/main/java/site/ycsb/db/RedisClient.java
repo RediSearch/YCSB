@@ -31,6 +31,7 @@ import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
+import site.ycsb.workloads.CoreWorkload;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -46,6 +47,8 @@ public class RedisClient extends DB {
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
+  private int fieldCount;
+  private String fieldPrefix;
 
   public static final String HOST_PROPERTY = "redis.host";
   public static final String PORT_PROPERTY = "redis.port";
@@ -54,6 +57,7 @@ public class RedisClient extends DB {
   public static final String TIMEOUT_PROPERTY = "redis.timeout";
 
   public static final String INDEX_KEY = "_indices";
+
 
   public void init() throws DBException {
     Properties props = getProperties();
@@ -74,7 +78,10 @@ public class RedisClient extends DB {
     if (redisTimeoutStr != null){
       timeout = Integer.parseInt(redisTimeoutStr);
     }
-
+    fieldCount = Integer.parseInt(props.getProperty(
+        CoreWorkload.FIELD_COUNT_PROPERTY, CoreWorkload.FIELD_COUNT_PROPERTY_DEFAULT));
+    fieldPrefix = props.getProperty(
+        CoreWorkload.FIELD_NAME_PREFIX, CoreWorkload.FIELD_NAME_PREFIX_DEFAULT);
     JedisPoolConfig poolConfig = new JedisPoolConfig();
     if (clusterEnabled) {
       Set<HostAndPort> jedisClusterNodes = new HashSet<>();
@@ -112,7 +119,7 @@ public class RedisClient extends DB {
   @Override
   public Status read(String table, String key, Set<String> fields,
       Map<String, ByteIterator> result) {
-    if (fields == null) {
+    if (fields == null || fields.size() == fieldCount) {
       Map<String, String> reply;
       if (clusterEnabled) {
         reply = jedisCluster.hgetAll(key);
@@ -219,7 +226,7 @@ public class RedisClient extends DB {
       Set<String> keys = j.zrangeByScore(INDEX_KEY, hash(startkey),
           Double.POSITIVE_INFINITY, 0, recordcount);
       Pipeline p = j.pipelined();
-      if (fields == null) {
+      if (fields == null || fields.size() == fieldCount) {
         for (String key : keys) {
           p.hgetAll(key);
         }
@@ -230,7 +237,7 @@ public class RedisClient extends DB {
         }
       }
       List<Object> res = p.syncAndReturnAll();
-      if (fields == null) {
+      if (fields == null || fields.size() == fieldCount) {
         for (Object reply : res) {
           HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
           extractHGetAllResults(values, (Map<String, String>) reply);
