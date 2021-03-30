@@ -45,7 +45,7 @@ LICENSE file.
     <dependency>
       <groupId>redis.clients</groupId>
       <artifactId>jedis</artifactId>
-      <version>${redis.version}</version>
+      <version>${jedis.redisearch.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.commons</groupId>
@@ -67,18 +67,18 @@ LICENSE file.
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-api</artifactId>
-      <version>2.0.2</version>
+      <version>2.11.2</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-to-slf4j</artifactId>
-      <version>2.8.2</version>
+      <version>2.11.2</version>
     </dependency>
     <dependency>
       <groupId>org.apache.ignite</groupId>
       <artifactId>ignite-log4j2</artifactId>
-      <version>2.7.6</version>
+      <version>${ignite.version}</version>
       <scope>compile</scope>
     </dependency>
   </dependencies>
