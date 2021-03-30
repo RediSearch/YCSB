@@ -46,12 +46,15 @@ public class RediSearchClient extends DB {
   public static final String TIMEOUT_PROPERTY = "redisearch.timeout";
   public static final String INDEX_NAME_PROPERTY = "redisearch.indexname";
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
+  public static final String SCORE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
+  public static final String SCORE_FIELD_NAME_PROPERTY_DEFAULT = "__score__";
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
   private int fieldCount;
   private String fieldPrefix;
   private String indexName;
+  private String scoreField;
 
   @Override
   public void init() throws DBException {
@@ -65,6 +68,7 @@ public class RediSearchClient extends DB {
     clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
     String portString = props.getProperty(PORT_PROPERTY);
     indexName = props.getProperty(INDEX_NAME_PROPERTY, INDEX_NAME_PROPERTY_DEFAULT);
+    scoreField = props.getProperty(SCORE_FIELD_NAME_PROPERTY, SCORE_FIELD_NAME_PROPERTY_DEFAULT);
     if (portString != null) {
       port = Integer.parseInt(portString);
     }
@@ -87,7 +91,7 @@ public class RediSearchClient extends DB {
         CoreWorkload.FIELD_COUNT_PROPERTY, CoreWorkload.FIELD_COUNT_PROPERTY_DEFAULT));
     fieldPrefix = props.getProperty(
         CoreWorkload.FIELD_NAME_PREFIX, CoreWorkload.FIELD_NAME_PREFIX_DEFAULT);
-    List<String> indexCreateCmdArgs = indexCreateCmdArgs(indexName, fieldCount, fieldPrefix);
+    List<String> indexCreateCmdArgs = indexCreateCmdArgs(indexName);
 
     try (Jedis setupPoolConn = getResource()) {
       setupPoolConn.sendCommand(RediSearchCommands.CREATE, indexCreateCmdArgs.toArray(String[]::new));
@@ -123,12 +127,9 @@ public class RediSearchClient extends DB {
    * @param fPrefix fields prefix
    * @return
    */
-  private List<String> indexCreateCmdArgs(String iName, int fCount, String fPrefix) {
-    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH", "SCHEMA",
-        "__score__", "NUMERIC", "SORTABLE"));
-    for (int i = 0; i < fCount; i++) {
-      args.addAll(Arrays.asList(String.format("%s%d", fPrefix, i), "TEXT", "NOINDEX"));
-    }
+  private List<String> indexCreateCmdArgs(String iName) {
+    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH", "SCORE_FIELD", scoreField,
+        "SCHEMA", scoreField, "NUMERIC", "SORTABLE"));
     return args;
   }
 
@@ -152,7 +153,7 @@ public class RediSearchClient extends DB {
    * would probably use the ASCII values of the keys.
    */
   private double hash(String key) {
-    return key.hashCode();
+    return key.hashCode() / Double.MAX_VALUE;
   }
 
   @Override
@@ -227,12 +228,17 @@ public class RediSearchClient extends DB {
    * To model this within RedisSearch, we use FT.SEARCH and use computed hash score from the key name as the lower limit
    * for the search query, and set +inf as the upper limit of the search result.
    * The provided record count is passed via the LIMIT 0 <recordcound> FT.SEARCH argument.
-   * Together, the above FT.SEARCH command arguments fully comply with a sorted, randomly choosen starting key, with
+   *
+   * Together, the above FT.SEARCH command arguments fully comply with a sorted, randomly chosen starting key, with
    * variadic record count replies.
    * <p>
    * Example FT.SEARCH command that a scan operation would generate.
-   * "FT.SEARCH" "index" "@__score__:[-6.17979116E8 inf]" "LIMIT" "0" "54" "RETURN" "10" "field0" \
-   * "field1" "field2" "field3" "field4" "field5" "field6" "field7" "field8" "field9"
+   * "FT.SEARCH" "index" "*" \
+   *                     "FILTER" __score__ "-6.17979116E8" +inf \
+   *                     "LIMIT" "0" "54" \
+   *                     "RETURN" "10" \
+   *                              "field0" "field1" "field2" "field3" "field4" \
+   *                              "field5" "field6" "field7" "field8" "field9"
    *
    * @param table       The name of the table
    * @param startkey    The record key of the first record to read.
@@ -279,9 +285,10 @@ public class RediSearchClient extends DB {
     if (rFields != null) {
       returnFieldsCount = rFields.size();
     }
-    List<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
-        String.format("@__score__:[%s inf]", hash(sKey)), "LIMIT", "0",
-        String.valueOf(rCount), "RETURN", String.valueOf(returnFieldsCount)));
+    List<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName, "*",
+        "FILTER", scoreField, Double.toString(hash(sKey)), "+inf",
+        "LIMIT", "0", String.valueOf(rCount),
+        "RETURN", String.valueOf(returnFieldsCount)));
 
     if (rFields == null) {
       for (int i = 0; i < fieldCount; i++) {
