@@ -340,10 +340,10 @@ public class RediSearchClient extends DB {
       String tagValue = queryPair.getValue1().replaceAll(" ", "\\\\ ");
       query = String.format("@%s:{%s}", fieldName, tagValue);
     }
-
-    if (onlyinsale) {
-      query = String.format("@inSale:{1} %s", query);
-    }
+//
+//    if (onlyinsale) {
+//      query = String.format("@inSale:{1} %s", query);
+//    }
 
     ArrayList<String> searchCommandArgs = new ArrayList<>(Arrays.asList(idxName,
         query,
