@@ -166,7 +166,7 @@ public class RediSearchClient extends DB {
     }
     iterator = commerceTextFields.iterator();
     while (iterator.hasNext()) {
-      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT")));
+      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "SORTABLE")));
     }
     iterator = nonIndexFields.iterator();
     while (iterator.hasNext()) {
