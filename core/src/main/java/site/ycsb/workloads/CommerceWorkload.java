@@ -12,6 +12,15 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  */
 public class CommerceWorkload extends CoreWorkload {
+  /**
+   * The name of the database table to run queries against.
+   */
+  public static final String TABLENAME_PROPERTY = "table";
+
+  /**
+   * The default name of the database table to run queries against.
+   */
+  public static final String TABLENAME_PROPERTY_DEFAULT = "products";
 
   /**
    * The name of the property for the min search length (number of records).
@@ -125,6 +134,8 @@ public class CommerceWorkload extends CoreWorkload {
   @Override
   public void init(Properties p) throws WorkloadException {
     faker = new Faker(new Locale("en"));
+    table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
+
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0) {

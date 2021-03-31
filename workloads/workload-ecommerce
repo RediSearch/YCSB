@@ -30,7 +30,8 @@ operationcount=1000
 workload=site.ycsb.workloads.CommerceWorkload
 
 nonindexedfields=productScore,code,image,price,currencyCode,stockCount,creator,shipsFrom
-indexedfields=department,brand,productName,color,inStock,inSale,productDescription
+#indexedfields=department,brand,productName,color,inStock,inSale,productDescription
+indexedfields=productName
 
 searchfields=productName,department,color,brand
 searchfieldsproportion=0.60,0.30,0.05,0.05

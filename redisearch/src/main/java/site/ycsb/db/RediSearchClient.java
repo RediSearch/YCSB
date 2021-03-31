@@ -86,7 +86,8 @@ public class RediSearchClient extends DB {
     if (portString != null) {
       port = Integer.parseInt(portString);
     }
-    orderedinserts = props.getProperty(CoreWorkload.INSERT_ORDER_PROPERTY).compareTo("ordered") == 0;
+    orderedinserts = props.getProperty(CoreWorkload.INSERT_ORDER_PROPERTY,
+        CommerceWorkload.INSERT_ORDER_PROPERTY_DEFAULT).compareTo("ordered") == 0;
     if (props.getProperty(HOST_PROPERTY) != null) {
       host = props.getProperty(HOST_PROPERTY);
     }
