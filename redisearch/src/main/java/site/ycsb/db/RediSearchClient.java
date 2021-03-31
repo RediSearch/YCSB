@@ -22,6 +22,7 @@
 
 package site.ycsb.db;
 
+import org.javatuples.Pair;
 import redis.clients.jedis.*;
 import redis.clients.jedis.commands.ProtocolCommand;
 import redis.clients.jedis.util.JedisClusterCRC16;
@@ -47,6 +48,10 @@ public class RediSearchClient extends DB {
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
   public static final String RANGE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
   public static final String RANGE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
+  public static final String INDEXED_TAG_FIELDS_PROPERTY = "redisearch.indexedtagfields";
+  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale";
+  public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redisearch.indexedtextfields";
+  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
@@ -57,6 +62,8 @@ public class RediSearchClient extends DB {
   private boolean orderedinserts;
   private boolean coreWorkload;
   private String keyprefix;
+  private Set<String> commerceTagFields;
+  private Set<String> commerceTextFields;
 
   @Override
   public void init() throws DBException {
@@ -113,13 +120,41 @@ public class RediSearchClient extends DB {
         setupPoolConn.sendCommand(RediSearchCommands.CREATE,
             coreWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
       } else {
-        System.out.println("CommerceWorkload");
+        commerceTagFields = new TreeSet<>();
+        commerceTextFields = new TreeSet<>();
+        for (String tagFieldName :
+            props.getProperty(INDEXED_TAG_FIELDS_PROPERTY, INDEXED_TAG_FIELDS_PROPERTY_DEFAULT).split(",")
+        ) {
+          commerceTagFields.add(tagFieldName);
+        }
+        for (String textFieldName :
+            props.getProperty(INDEXED_TEXT_FIELDS_PROPERTY, INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT).split(",")
+        ) {
+          commerceTextFields.add(textFieldName);
+        }
+        setupPoolConn.sendCommand(RediSearchCommands.CREATE,
+            commerceWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
       }
     } catch (redis.clients.jedis.exceptions.JedisDataException e) {
       if (!e.getMessage().contains("Index already exists")) {
         throw new DBException(e.getMessage());
       }
     }
+  }
+
+  private List<String> commerceWorkloadIndexCreateCmdArgs(String iName) {
+    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
+        "SCORE_FIELD", "productScore",
+        "SCHEMA"));
+    Iterator iterator = commerceTagFields.iterator();
+    while (iterator.hasNext()) {
+      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TAG", "SORTABLE")));
+    }
+    iterator = commerceTextFields.iterator();
+    while (iterator.hasNext()) {
+      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "SORTABLE")));
+    }
+    return args;
   }
 
   private Jedis getResource() {
@@ -243,6 +278,65 @@ public class RediSearchClient extends DB {
     } catch (Exception e) {
       return Status.ERROR;
     }
+  }
+
+  @Override
+  public Status search(String table,
+                       Pair<String, String> queryPair, boolean onlyinsale,
+                       Pair<Integer, Integer> pagePair,
+                       HashSet<String> fields,
+                       Vector<HashMap<String, ByteIterator>> result) {
+
+    List<Object> resp;
+    try (Jedis j = getResource()) {
+      resp = (List<Object>) j.sendCommand(RediSearchCommands.SEARCH,
+          searchCommandArgs(indexName, queryPair, onlyinsale, pagePair, fields));
+      for (int i = 1; i < resp.size(); i += 2) {
+        List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
+        HashMap<String, ByteIterator> values = new HashMap<>();
+        for (int k = 2; k < docFields.size(); k += 2) {
+          values.put(SafeEncoder.encode(docFields.get(k)),
+              new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
+          result.add(values);
+        }
+      }
+
+    } catch (Exception e) {
+      return Status.ERROR;
+    }
+    return Status.OK;
+  }
+
+  private String[] searchCommandArgs(String idxName, Pair<String, String> queryPair, boolean onlyinsale,
+                                     Pair<Integer, Integer> pagePair, HashSet<String> rFields) {
+    int returnFieldsCount = fieldCount;
+    if (rFields != null) {
+      returnFieldsCount = rFields.size();
+    }
+    String fieldName = queryPair.getValue0();
+    String query = "*";
+    if (commerceTextFields.contains(fieldName)) {
+      query = String.format("@%s:\"%s\"", fieldName, queryPair.getValue1());
+    } else {
+      String tagValue = queryPair.getValue1().replaceAll("[^a-zA-Z0-9]", " ");
+      query = String.format("@%s:{%s}", fieldName, tagValue);
+    }
+
+    if (onlyinsale) {
+      query = String.format("@inSale:{1} %s", query);
+    }
+
+    ArrayList<String> searchCommandArgs = new ArrayList<>(Arrays.asList(idxName,
+        query,
+        "LIMIT", String.valueOf(pagePair.getValue0()),
+        String.valueOf(pagePair.getValue0() + pagePair.getValue1() - 1)));
+    if (rFields != null) {
+      searchCommandArgs.addAll(Arrays.asList("RETURN", String.valueOf(returnFieldsCount)));
+      for (String field : rFields) {
+        searchCommandArgs.add(field);
+      }
+    }
+    return searchCommandArgs.toArray(String[]::new);
   }
 
   /**

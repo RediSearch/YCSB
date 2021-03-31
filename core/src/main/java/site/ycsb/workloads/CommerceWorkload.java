@@ -1,12 +1,11 @@
 package site.ycsb.workloads;
 
 import com.github.javafaker.Faker;
+import org.javatuples.Pair;
 import site.ycsb.*;
 import site.ycsb.generator.*;
 
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -15,15 +14,44 @@ import java.util.concurrent.ThreadLocalRandom;
 public class CommerceWorkload extends CoreWorkload {
 
   /**
-   * The name of the property for the of sentences in description paragraph of a product a record.
+   * The name of the property for the min search length (number of records).
    */
-  public static final String DESCRIPTION_SETENCE_COUNT_PROPERTY = "description-sentence-count";
+  public static final String MIN_SEARCH_LENGTH_PROPERTY = "minsearchlength";
+
+  public static final String INDEXED_FIELDS_SEARCH_PROPERTY = "indexedfields";
+  public static final String INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
+      "brand,department,productName,productDescription,inSale";
+
+  public static final String SEARCH_FIELDS_PROPORTION_PROPERTY = "searchfieldsproportion";
+  public static final String SEARCH_FIELDS_PROPORTION_PROPERTY_DEFAULT = "0.50,0.20,0.20,0.05,0.05";
+
   /**
-   * Default number of sentences in description paragraph of a product a record.
+   * The default min search length.
    */
-  public static final String DESCRIPTION_SETENCE_COUNT_PROPERTY_DEFAULT = "1";
+  public static final String MIN_SEARCH_LENGTH_PROPERTY_DEFAULT = "5";
+  /**
+   * The name of the property for the max search length (number of records).
+   */
+  public static final String MAX_SEARCH_LENGTH_PROPERTY = "maxscanlength";
+  /**
+   * The default max search length.
+   */
+  public static final String MAX_SEARCH_LENGTH_PROPERTY_DEFAULT = "50";
+  /**
+   * The name of the property for the search length distribution. Options are "uniform" and "zipfian"
+   * (favoring short scans)
+   */
+  public static final String SEARCH_LENGTH_DISTRIBUTION_PROPERTY = "searchlengthdistribution";
+  /**
+   * The default max scan length.
+   */
+  public static final String SEARCH_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT = "zipfian";
+  private static final String SEARCH_PROPORTION_PROPERTY = "searchproportion";
+  private static final String SEARCH_PROPORTION_PROPERTY_DEFAULT = "0.6";
+  protected NumberGenerator searchlength;
+  private String[] indexedFields;
+  private ArrayList<Double> indexedFieldsProportionPDF;
   private Faker faker;
-  private int descriptionSentenceCount;
 
   public static String buildKeyName(long keynum, int zeropadding, boolean orderedinserts) {
     if (!orderedinserts) {
@@ -38,6 +66,51 @@ public class CommerceWorkload extends CoreWorkload {
     return prekey + value;
   }
 
+
+  /**
+   * Creates a weighted discrete values with database operations for a workload to perform.
+   * Weights/proportions are read from the properties list and defaults are used
+   * when values are not configured.
+   * Current operations are "READ", "UPDATE", "INSERT", "SCAN" and "READMODIFYWRITE".
+   *
+   * @param p The properties list to pull weights from.
+   * @return A generator that can be used to determine the next operation to perform.
+   * @throws IllegalArgumentException if the properties object was null.
+   */
+  protected static DiscreteGenerator createOperationGenerator(final Properties p) {
+    if (p == null) {
+      throw new IllegalArgumentException("Properties object cannot be null");
+    }
+    final double readproportion = Double.parseDouble(
+        p.getProperty(READ_PROPORTION_PROPERTY, READ_PROPORTION_PROPERTY_DEFAULT));
+    final double updateproportion = Double.parseDouble(
+        p.getProperty(UPDATE_PROPORTION_PROPERTY, UPDATE_PROPORTION_PROPERTY_DEFAULT));
+    final double insertproportion = Double.parseDouble(
+        p.getProperty(INSERT_PROPORTION_PROPERTY, INSERT_PROPORTION_PROPERTY_DEFAULT));
+    final double searchproportion = Double.parseDouble(
+        p.getProperty(SEARCH_PROPORTION_PROPERTY, SEARCH_PROPORTION_PROPERTY_DEFAULT));
+
+    final DiscreteGenerator operationchooser = new DiscreteGenerator();
+    if (readproportion > 0) {
+      operationchooser.addValue(readproportion, "READ");
+    }
+
+    if (updateproportion > 0) {
+      operationchooser.addValue(updateproportion, "UPDATE");
+    }
+
+    if (insertproportion > 0) {
+      operationchooser.addValue(insertproportion, "INSERT");
+    }
+
+    if (searchproportion > 0) {
+      operationchooser.addValue(searchproportion, "SEARCH");
+    }
+
+    return operationchooser;
+  }
+
+
   /**
    * Initialize the scenario.
    * Called once, in the main client thread, before any operations are started.
@@ -45,8 +118,6 @@ public class CommerceWorkload extends CoreWorkload {
   @Override
   public void init(Properties p) throws WorkloadException {
     faker = new Faker(new Locale("en"));
-    descriptionSentenceCount =
-        Integer.parseInt(p.getProperty(FIELD_COUNT_PROPERTY, FIELD_COUNT_PROPERTY_DEFAULT));
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0) {
@@ -115,12 +186,38 @@ public class CommerceWorkload extends CoreWorkload {
       throw new WorkloadException("Unknown request distribution \"" + requestdistrib + "\"");
     }
 
-    fieldchooser = new UniformLongGenerator(0, fieldcount - 1);
-
     insertionRetryLimit = Integer.parseInt(p.getProperty(
         INSERTION_RETRY_LIMIT, INSERTION_RETRY_LIMIT_DEFAULT));
     insertionRetryInterval = Integer.parseInt(p.getProperty(
         INSERTION_RETRY_INTERVAL, INSERTION_RETRY_INTERVAL_DEFAULT));
+
+    int minsearchlength =
+        Integer.parseInt(p.getProperty(MIN_SEARCH_LENGTH_PROPERTY, MIN_SEARCH_LENGTH_PROPERTY_DEFAULT));
+    int maxsearchlength =
+        Integer.parseInt(p.getProperty(MAX_SEARCH_LENGTH_PROPERTY, MAX_SEARCH_LENGTH_PROPERTY_DEFAULT));
+    String searchlengthdistrib =
+        p.getProperty(SEARCH_LENGTH_DISTRIBUTION_PROPERTY, SEARCH_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT);
+
+    if (searchlengthdistrib.compareTo("uniform") == 0) {
+      searchlength = new UniformLongGenerator(minsearchlength, maxsearchlength);
+    } else if (searchlengthdistrib.compareTo("zipfian") == 0) {
+      searchlength = new ZipfianGenerator(minsearchlength, maxsearchlength);
+    } else {
+      throw new WorkloadException(
+          "Distribution \"" + searchlengthdistrib + "\" not allowed for search length");
+    }
+
+    indexedFields = p.getProperty(INDEXED_FIELDS_SEARCH_PROPERTY,
+        INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT).split(",");
+    String[] indexedFieldsProportionStr = p.getProperty(SEARCH_FIELDS_PROPORTION_PROPERTY,
+        SEARCH_FIELDS_PROPORTION_PROPERTY_DEFAULT).split(",");
+    indexedFieldsProportionPDF = new ArrayList<Double>();
+    double currentPDF = 0.0;
+    for (String indexedFieldProportion:indexedFieldsProportionStr) {
+      currentPDF += Double.parseDouble(indexedFieldProportion);
+      indexedFieldsProportionPDF.add(currentPDF);
+    }
+
   }
 
   /**
@@ -170,22 +267,140 @@ public class CommerceWorkload extends CoreWorkload {
     return null != status && status.isOk();
   }
 
-  /**
-   * Do one transaction operation. Because it will be called concurrently from multiple client threads, this
-   * function must be thread safe. However, avoid synchronized, or the threads will block waiting for each
-   * other, and it will be difficult to reach the target throughput. Ideally, this function would have no side
-   * effects other than DB operations and mutations on threadstate. Mutations to threadstate do not need to be
-   * synchronized, since each thread has its own threadstate instance.
-   *
-   * @param db
-   * @param threadstate
-   * @return false if the workload knows it is done for this thread. Client will terminate the thread.
-   * Return true otherwise. Return true for workloads that rely on operationcount. For workloads that read
-   * traces from a file, return true when there are more to do, false when you are done.
-   */
-  @Override
   public boolean doTransaction(DB db, Object threadstate) {
-    return false;
+    String operation = operationchooser.nextString();
+    if (operation == null) {
+      return false;
+    }
+    switch (operation) {
+    case "READ":
+      doTransactionRead(db);
+      break;
+    case "UPDATE":
+      doTransactionUpdate(db);
+      break;
+    case "INSERT":
+      doTransactionInsert(db);
+      break;
+    case "SEARCH":
+      doTransactionSearch(db);
+      break;
+    default:
+      return false;
+    }
+
+    return true;
+  }
+
+
+  long nextKeynum() {
+    long keynum;
+    if (keychooser instanceof ExponentialGenerator) {
+      do {
+        keynum = transactioninsertkeysequence.lastValue() - keychooser.nextValue().intValue();
+      } while (keynum < 0);
+    } else {
+      do {
+        keynum = keychooser.nextValue().intValue();
+      } while (keynum > transactioninsertkeysequence.lastValue());
+    }
+    return keynum;
+  }
+
+  public void doTransactionRead(DB db) {
+    // choose a random key
+    long keynum = nextKeynum();
+    String keyname = buildKeyName(keynum, zeropadding, orderedinserts);
+    HashSet<String> fields = null;
+
+    HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
+    db.read(table, keyname, fields, cells);
+  }
+
+  public void doTransactionUpdate(DB db) {
+    // choose a random key
+    long keynum = nextKeynum();
+    String keyname = buildKeyName(keynum, zeropadding, orderedinserts);
+
+    HashMap<String, ByteIterator> values;
+
+    if (writeallfields) {
+      // new data for all the fields
+      values = buildValues(keyname);
+    } else {
+      // update a random field
+      values = buildSingleValue(keyname);
+    }
+
+    db.update(table, keyname, values);
+  }
+
+  public void doTransactionInsert(DB db) {
+    // choose the next key
+    long keynum = transactioninsertkeysequence.nextValue();
+
+    try {
+      String keyname = buildKeyName(keynum, zeropadding, orderedinserts);
+
+      HashMap<String, ByteIterator> values = buildValues(keyname);
+      db.insert(table, keyname, values);
+    } finally {
+      transactioninsertkeysequence.acknowledge(keynum);
+    }
+  }
+
+
+  public void doTransactionSearch(DB db) {
+    // choose a random search length
+    int len = searchlength.nextValue().intValue();
+    int replystartpos = 0;
+
+    HashSet<String> fields = null;
+    String fieldName = randomIndexedFieldName();
+    String textquerytosearch = "*";
+    textquerytosearch = getRandomFieldValue(fieldName, textquerytosearch);
+    boolean onlyinsale = ThreadLocalRandom.current()
+        .nextBoolean();
+    Pair<String, String> queryPair = Pair.with(fieldName, textquerytosearch);
+    Pair<Integer, Integer> pagePair = Pair.with(replystartpos, len);
+
+    db.search(table, queryPair, onlyinsale, pagePair, fields,
+        new Vector<HashMap<String, ByteIterator>>());
+  }
+
+  private String randomIndexedFieldName() {
+    double rnd = ThreadLocalRandom.current()
+        .nextDouble();
+    String fieldName = indexedFields[0];
+    double fieldPDF = indexedFieldsProportionPDF.get(0);
+    for (int pos = 1; rnd<fieldPDF && pos < indexedFieldsProportionPDF.size(); pos++){
+      fieldPDF=indexedFieldsProportionPDF.get(pos);
+      fieldName=indexedFields[pos];
+    }
+    return fieldName;
+  }
+
+  private String getRandomFieldValue(String fieldName, String textquerytosearch) {
+    switch (fieldName){
+    case "brand":
+      textquerytosearch = faker.company().name();
+      break;
+    case "color":
+      textquerytosearch = faker.color().name();
+      break;
+    case "department":
+      textquerytosearch = faker.commerce().department();
+      break;
+    case "productName":
+      textquerytosearch = faker.commerce().productName();
+      break;
+    case "productDescription":
+      textquerytosearch = faker.company().catchPhrase().split(" ")[0];
+      break;
+    default:
+      break;
+    }
+    return textquerytosearch;
   }
 
   /**
@@ -197,7 +412,7 @@ public class CommerceWorkload extends CoreWorkload {
     values.put("productScore", new StringByteIterator(String.valueOf(1.0 - ThreadLocalRandom.current()
         .nextDouble())));
     values.put("code", new StringByteIterator(faker.code().ean13()));
-    values.put("description", new StringByteIterator(faker.company().catchPhrase()));
+    values.put("productDescription", new StringByteIterator(faker.company().catchPhrase()));
     values.put("department", new StringByteIterator(faker.commerce().department()));
     // 0 for out-of-stock
     // 1 for in-stock
@@ -212,11 +427,23 @@ public class CommerceWorkload extends CoreWorkload {
     values.put("material", new StringByteIterator(faker.commerce().material()));
     values.put("price", new StringByteIterator(faker.commerce().price()));
     values.put("currencyCode", new StringByteIterator(faker.currency().code()));
-    values.put("brand", new StringByteIterator(faker.company().name()));
+    values.put("brand", new StringByteIterator(faker.company().name().split(" ")[0]));
     values.put("stockCount", new StringByteIterator(String.valueOf(ThreadLocalRandom.current()
         .nextInt(501))));
     values.put("creator", new StringByteIterator(faker.artist().name()));
     values.put("shipsFrom", new StringByteIterator(faker.country().countryCode3()));
     return values;
   }
+
+  /**
+   * Builds a value for a randomly chosen indexed field.
+   */
+  private HashMap<String, ByteIterator> buildSingleValue(String key) {
+    HashMap<String, ByteIterator> value = new HashMap<>();
+    String fieldName = randomIndexedFieldName();
+    String fieldValue = getRandomFieldValue(fieldName, "");
+    value.put(fieldName, new StringByteIterator(fieldValue));
+    return value;
+  }
+
 }

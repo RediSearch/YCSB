@@ -21,18 +21,22 @@
 #                        - Backoffice: Product updates and product inserts being showcase by update/insert queries.
 #
 #                        
-#   Read/Update/Search/Insert ratio: 20/15/60/5
-#   Default data size: 1 KB records (12 fields, 100 bytes each, plus key)
+#   Read/Update/Search/Insert ratio: 60/20/20/10
+#   Default data size: 500 B records, plus key
 #   Request distribution: zipfian
 
 recordcount=1000
 operationcount=1000
 workload=site.ycsb.workloads.CommerceWorkload
 
-readproportion=0.20
-updateproportion=0.15
-searchproportion=0.60
-insertproportion=0.05
+indexedfields=brand,department,productName,productDescription,color
+searchfieldsproportion=0.50,0.30,0.10,0.05,0.05
+readproportion=0.50
+searchproportion=0.20
+updateproportion=0.20
+insertproportion=0.10
+scanproportion=0
+readmodifywriteproportion=0
 
 requestdistribution=zipfian
 
