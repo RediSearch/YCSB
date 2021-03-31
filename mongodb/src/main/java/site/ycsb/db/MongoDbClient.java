@@ -500,6 +500,7 @@ public class MongoDbClient extends DB {
       MongoCollection<Document> collection = database.getCollection(table);
       FindIterable<Document> findIterable =
           collection.find(Filters.text(searchTerm))
+              .sort(Sorts.metaTextScore("productScore"))
               .limit(recordcount);
 
       if (fields != null) {

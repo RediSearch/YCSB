@@ -50,9 +50,11 @@ public class RediSearchClient extends DB {
   public static final String RANGE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
   public static final String RANGE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
   public static final String INDEXED_TAG_FIELDS_PROPERTY = "redisearch.indexedtagfields";
-  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale,inStock";
+//  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale,inStock";
+  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redisearch.indexedtextfields";
-  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
+//  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
+  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName";
 
 
   private JedisCluster jedisCluster;

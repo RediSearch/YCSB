@@ -29,7 +29,7 @@ public class CommerceWorkload extends CoreWorkload {
 
   public static final String INDEXED_FIELDS_SEARCH_PROPERTY = "indexedfields";
   public static final String INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
-      "brand,department,productName,productDescription,inSale,inStock";
+      "productName";
 
   public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY = "nonindexedfields";
   public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
