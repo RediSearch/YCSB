@@ -248,10 +248,11 @@ public class MongoDbClient extends DB {
           MongoCollection<Document> collection = database.getCollection(benchmarkTable);
           String[] indexedFields = props.getProperty(CommerceWorkload.INDEXED_FIELDS_SEARCH_PROPERTY,
               CommerceWorkload.INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT).split(",");
-          for (String field : indexedFields
-          ) {
-            collection.createIndex(Indexes.text(field));
+          if (indexedFields.length > 1) {
+            System.err.println("Mongo index text field length should be 1" + url);
+            return;
           }
+          collection.createIndex(Indexes.text(indexedFields[0]));
           System.out.println("Created text fields for Commerce workload");
 
         }
@@ -499,7 +500,6 @@ public class MongoDbClient extends DB {
       MongoCollection<Document> collection = database.getCollection(table);
       FindIterable<Document> findIterable =
           collection.find(Filters.text(searchTerm))
-              .sort(Sorts.metaTextScore("productScore"))
               .limit(recordcount);
 
       if (fields != null) {
