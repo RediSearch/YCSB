@@ -20,10 +20,19 @@ public class CommerceWorkload extends CoreWorkload {
 
   public static final String INDEXED_FIELDS_SEARCH_PROPERTY = "indexedfields";
   public static final String INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
-      "brand,department,productName,productDescription,inSale";
+      "brand,department,productName,productDescription,inSale,inStock";
+
+  public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY = "nonindexedfields";
+  public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
+      "nonindexedfields=productScore,code,image,price,currencyCode,stockCount,creator,shipsFrom";
+
 
   public static final String SEARCH_FIELDS_PROPORTION_PROPERTY = "searchfieldsproportion";
-  public static final String SEARCH_FIELDS_PROPORTION_PROPERTY_DEFAULT = "0.50,0.20,0.20,0.05,0.05";
+  public static final String SEARCH_FIELDS_PROPORTION_PROPERTY_DEFAULT = "0.70,0.10,0.05,0.05,0.05,0.05";
+
+  public static final String SEARCH_FIELDS_PROPERTY = "searchfields";
+  public static final String SEARCH_FIELDS_PROPERTY_DEFAULT = "department,brand,productName,color,inStock";
+
 
   /**
    * The default min search length.
@@ -32,19 +41,17 @@ public class CommerceWorkload extends CoreWorkload {
   /**
    * The name of the property for the max search length (number of records).
    */
-  public static final String MAX_SEARCH_LENGTH_PROPERTY = "maxscanlength";
+  public static final String MAX_SEARCH_LENGTH_PROPERTY = "maxsearchlength";
   /**
    * The default max search length.
    */
   public static final String MAX_SEARCH_LENGTH_PROPERTY_DEFAULT = "50";
   /**
    * The name of the property for the search length distribution. Options are "uniform" and "zipfian"
-   * (favoring short scans)
+   * (favoring short pages)
    */
   public static final String SEARCH_LENGTH_DISTRIBUTION_PROPERTY = "searchlengthdistribution";
-  /**
-   * The default max scan length.
-   */
+
   public static final String SEARCH_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT = "zipfian";
   private static final String SEARCH_PROPORTION_PROPERTY = "searchproportion";
   private static final String SEARCH_PROPORTION_PROPERTY_DEFAULT = "0.6";
@@ -207,8 +214,8 @@ public class CommerceWorkload extends CoreWorkload {
           "Distribution \"" + searchlengthdistrib + "\" not allowed for search length");
     }
 
-    indexedFields = p.getProperty(INDEXED_FIELDS_SEARCH_PROPERTY,
-        INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT).split(",");
+    indexedFields = p.getProperty(SEARCH_FIELDS_PROPERTY,
+        SEARCH_FIELDS_PROPERTY_DEFAULT).split(",");
     String[] indexedFieldsProportionStr = p.getProperty(SEARCH_FIELDS_PROPORTION_PROPERTY,
         SEARCH_FIELDS_PROPORTION_PROPERTY_DEFAULT).split(",");
     indexedFieldsProportionPDF = new ArrayList<Double>();
@@ -383,13 +390,13 @@ public class CommerceWorkload extends CoreWorkload {
   private String getRandomFieldValue(String fieldName, String textquerytosearch) {
     switch (fieldName){
     case "brand":
-      textquerytosearch = faker.company().name();
+      textquerytosearch = faker.company().name().replaceAll("[^a-zA-Z0-9]", " ");
       break;
     case "color":
-      textquerytosearch = faker.color().name();
+      textquerytosearch = faker.color().name().replaceAll("[^a-zA-Z0-9]", " ");
       break;
     case "department":
-      textquerytosearch = faker.commerce().department();
+      textquerytosearch = faker.commerce().department().replaceAll("[^a-zA-Z0-9]", " ");
       break;
     case "productName":
       textquerytosearch = faker.commerce().productName();
@@ -413,7 +420,8 @@ public class CommerceWorkload extends CoreWorkload {
         .nextDouble())));
     values.put("code", new StringByteIterator(faker.code().ean13()));
     values.put("productDescription", new StringByteIterator(faker.company().catchPhrase()));
-    values.put("department", new StringByteIterator(faker.commerce().department()));
+    values.put("department", new StringByteIterator(faker.commerce().department()
+        .replaceAll("[^a-zA-Z0-9]", " ")));
     // 0 for out-of-stock
     // 1 for in-stock
     values.put("inStock", new StringByteIterator(String.valueOf(ThreadLocalRandom.current()
@@ -422,15 +430,19 @@ public class CommerceWorkload extends CoreWorkload {
     // 1 for inSale
     values.put("inSale", new StringByteIterator(String.valueOf(ThreadLocalRandom.current()
         .nextInt(2))));
-    values.put("color", new StringByteIterator(faker.commerce().color()));
+    values.put("color", new StringByteIterator(faker.commerce().color().
+        replaceAll("[^a-zA-Z0-9]", " ")));
     values.put("image", new StringByteIterator(faker.company().logo()));
-    values.put("material", new StringByteIterator(faker.commerce().material()));
+    values.put("material", new StringByteIterator(faker.commerce().material()
+        .replaceAll("[^a-zA-Z0-9]", " ")));
     values.put("price", new StringByteIterator(faker.commerce().price()));
     values.put("currencyCode", new StringByteIterator(faker.currency().code()));
-    values.put("brand", new StringByteIterator(faker.company().name().split(" ")[0]));
+    values.put("brand", new StringByteIterator(faker.company().name()
+        .replaceAll("[^a-zA-Z0-9]", " ")));
     values.put("stockCount", new StringByteIterator(String.valueOf(ThreadLocalRandom.current()
         .nextInt(501))));
-    values.put("creator", new StringByteIterator(faker.artist().name()));
+    values.put("creator", new StringByteIterator(faker.artist().name()
+        .replaceAll("[^a-zA-Z0-9]", " ")));
     values.put("shipsFrom", new StringByteIterator(faker.country().countryCode3()));
     return values;
   }

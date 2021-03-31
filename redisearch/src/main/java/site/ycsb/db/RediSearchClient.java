@@ -28,6 +28,7 @@ import redis.clients.jedis.commands.ProtocolCommand;
 import redis.clients.jedis.util.JedisClusterCRC16;
 import redis.clients.jedis.util.SafeEncoder;
 import site.ycsb.*;
+import site.ycsb.workloads.CommerceWorkload;
 import site.ycsb.workloads.CoreWorkload;
 
 import java.util.*;
@@ -49,9 +50,11 @@ public class RediSearchClient extends DB {
   public static final String RANGE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
   public static final String RANGE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
   public static final String INDEXED_TAG_FIELDS_PROPERTY = "redisearch.indexedtagfields";
-  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale";
+  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale,inStock";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redisearch.indexedtextfields";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
+
+
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
@@ -64,6 +67,7 @@ public class RediSearchClient extends DB {
   private String keyprefix;
   private Set<String> commerceTagFields;
   private Set<String> commerceTextFields;
+  private Set<String> nonIndexFields;
 
   @Override
   public void init() throws DBException {
@@ -122,6 +126,7 @@ public class RediSearchClient extends DB {
       } else {
         commerceTagFields = new TreeSet<>();
         commerceTextFields = new TreeSet<>();
+        nonIndexFields = new TreeSet<>();
         for (String tagFieldName :
             props.getProperty(INDEXED_TAG_FIELDS_PROPERTY, INDEXED_TAG_FIELDS_PROPERTY_DEFAULT).split(",")
         ) {
@@ -131,6 +136,12 @@ public class RediSearchClient extends DB {
             props.getProperty(INDEXED_TEXT_FIELDS_PROPERTY, INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT).split(",")
         ) {
           commerceTextFields.add(textFieldName);
+        }
+        for (String fieldName :
+            props.getProperty(CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY,
+                CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT).split(",")
+        ) {
+          nonIndexFields.add(fieldName);
         }
         setupPoolConn.sendCommand(RediSearchCommands.CREATE,
             commerceWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
@@ -144,15 +155,19 @@ public class RediSearchClient extends DB {
 
   private List<String> commerceWorkloadIndexCreateCmdArgs(String iName) {
     List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
-        "SCORE_FIELD", "productScore",
+        "SCORE_FIELD", "productScore", "NOHL", "NOFIELDS", "NOFREQS",
         "SCHEMA"));
     Iterator iterator = commerceTagFields.iterator();
     while (iterator.hasNext()) {
-      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TAG", "SORTABLE")));
+      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TAG")));
     }
     iterator = commerceTextFields.iterator();
     while (iterator.hasNext()) {
-      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "SORTABLE")));
+      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT")));
+    }
+    iterator = nonIndexFields.iterator();
+    while (iterator.hasNext()) {
+      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "NOINDEX")));
     }
     return args;
   }
@@ -302,7 +317,8 @@ public class RediSearchClient extends DB {
       }
 
     } catch (Exception e) {
-      return Status.ERROR;
+      throw e;
+//      return Status.ERROR;
     }
     return Status.OK;
   }
@@ -314,11 +330,11 @@ public class RediSearchClient extends DB {
       returnFieldsCount = rFields.size();
     }
     String fieldName = queryPair.getValue0();
-    String query = "*";
+    String query;
     if (commerceTextFields.contains(fieldName)) {
-      query = String.format("@%s:\"%s\"", fieldName, queryPair.getValue1());
+      query = String.format("@%s:%s", fieldName, queryPair.getValue1());
     } else {
-      String tagValue = queryPair.getValue1().replaceAll("[^a-zA-Z0-9]", " ");
+      String tagValue = queryPair.getValue1().replaceAll(" ", "\\\\ ");
       query = String.format("@%s:{%s}", fieldName, tagValue);
     }
 

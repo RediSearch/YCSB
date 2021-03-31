@@ -29,12 +29,19 @@ recordcount=1000
 operationcount=1000
 workload=site.ycsb.workloads.CommerceWorkload
 
-indexedfields=brand,department,productName,productDescription,color
-searchfieldsproportion=0.50,0.30,0.10,0.05,0.05
-readproportion=0.50
-searchproportion=0.20
-updateproportion=0.20
-insertproportion=0.10
+nonindexedfields=productScore,code,image,price,currencyCode,stockCount,creator,shipsFrom
+indexedfields=department,brand,productName,color,inStock,inSale,productDescription
+
+searchfields=productName,department,color,brand
+searchfieldsproportion=0.60,0.30,0.05,0.05
+searchlengthdistribution=zipfian
+maxsearchlength=20
+minsearchlength=3
+
+readproportion=0.85
+searchproportion=0.12
+updateproportion=0.02
+insertproportion=0.01
 scanproportion=0
 readmodifywriteproportion=0
 
