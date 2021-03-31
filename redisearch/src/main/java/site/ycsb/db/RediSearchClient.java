@@ -50,10 +50,10 @@ public class RediSearchClient extends DB {
   public static final String RANGE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
   public static final String RANGE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
   public static final String INDEXED_TAG_FIELDS_PROPERTY = "redisearch.indexedtagfields";
-//  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale,inStock";
+  //  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale,inStock";
   public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redisearch.indexedtextfields";
-//  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
+  //  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName";
 
 
@@ -70,6 +70,7 @@ public class RediSearchClient extends DB {
   private Set<String> commerceTagFields;
   private Set<String> commerceTextFields;
   private Set<String> nonIndexFields;
+  private boolean topologyUpdated;
 
   @Override
   public void init() throws DBException {
@@ -85,6 +86,7 @@ public class RediSearchClient extends DB {
     indexName = props.getProperty(INDEX_NAME_PROPERTY, INDEX_NAME_PROPERTY_DEFAULT);
     rangeField = props.getProperty(RANGE_FIELD_NAME_PROPERTY, RANGE_FIELD_NAME_PROPERTY_DEFAULT);
     keyprefix = "user";
+    topologyUpdated = true;
     if (portString != null) {
       port = Integer.parseInt(portString);
     }
@@ -107,10 +109,11 @@ public class RediSearchClient extends DB {
         List<Object> nodeDetail = (List<Object>) ((List<Object>) slotDetail).get(2);
         String h = new String((byte[]) nodeDetail.get(0));
         long p = (long) nodeDetail.get(1);
-//        System.out.println(h + " : " + p);
+        System.out.println(h + " : " + p);
         startNodes.add(new HostAndPort(h, (int) p));
       }
       jedisCluster = new JedisCluster(startNodes, timeout, timeout, 5, password, poolConfig);
+      topologyUpdated = false;
     } else {
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
     }
@@ -186,6 +189,15 @@ public class RediSearchClient extends DB {
 
   private Jedis getResource(String key) {
     if (clusterEnabled) {
+      if (!topologyUpdated) {
+        try {
+          jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key)).exists(key);
+        } catch (redis.clients.jedis.exceptions.JedisMovedDataException e) {
+          System.err.println(e.getMessage());
+        }
+        // should pass after updating
+        jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key)).exists(key);
+      }
       return jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
     } else {
       return jedisPool.getResource();
