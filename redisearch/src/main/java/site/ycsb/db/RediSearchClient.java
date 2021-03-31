@@ -271,7 +271,7 @@ public class RediSearchClient extends DB {
       int rangeStart = hash(startkey);
       int rangeEnd = Integer.MAX_VALUE;
       if (orderedinserts) {
-        rangeEnd = rangeStart + recordcount;
+        rangeEnd = rangeStart + recordcount - 1;
       }
       resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
           scanCommandArgs(indexName, recordcount, rangeStart, rangeEnd, fields));
@@ -307,11 +307,9 @@ public class RediSearchClient extends DB {
       returnFieldsCount = rFields.size();
     }
     ArrayList<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
-        String.format("@%s:[%d %d]", rangeField, rangeStart, rangeEnd),
+        String.format("@%s:[%d +inf]", rangeField, rangeStart),
         "LIMIT", "0", String.valueOf(rCount), "FIRST"));
-    if (!orderedinserts) {
-      scanSearchArgs.addAll(Arrays.asList("FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC"));
-    }
+    scanSearchArgs.addAll(Arrays.asList("FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC"));
     scanSearchArgs.addAll(Arrays.asList("LOAD", String.valueOf(returnFieldsCount)));
 
     if (rFields == null) {
