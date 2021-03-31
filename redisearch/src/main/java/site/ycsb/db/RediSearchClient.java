@@ -55,6 +55,7 @@ public class RediSearchClient extends DB {
   private String indexName;
   private String rangeField;
   private boolean orderedinserts;
+  private boolean coreWorkload;
   private String keyprefix;
 
   @Override
@@ -104,10 +105,16 @@ public class RediSearchClient extends DB {
         CoreWorkload.FIELD_COUNT_PROPERTY, CoreWorkload.FIELD_COUNT_PROPERTY_DEFAULT));
     fieldPrefix = props.getProperty(
         CoreWorkload.FIELD_NAME_PREFIX, CoreWorkload.FIELD_NAME_PREFIX_DEFAULT);
-    List<String> indexCreateCmdArgs = indexCreateCmdArgs(indexName);
+
 
     try (Jedis setupPoolConn = getResource()) {
-      setupPoolConn.sendCommand(RediSearchCommands.CREATE, indexCreateCmdArgs.toArray(String[]::new));
+      coreWorkload = props.getProperty("workload").compareTo("site.ycsb.workloads.CoreWorkload") == 0;
+      if (coreWorkload) {
+        setupPoolConn.sendCommand(RediSearchCommands.CREATE,
+            coreWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
+      } else {
+        System.out.println("CommerceWorkload");
+      }
     } catch (redis.clients.jedis.exceptions.JedisDataException e) {
       if (!e.getMessage().contains("Index already exists")) {
         throw new DBException(e.getMessage());
@@ -138,7 +145,7 @@ public class RediSearchClient extends DB {
    * @param iName Index name
    * @return
    */
-  private List<String> indexCreateCmdArgs(String iName) {
+  private List<String> coreWorkloadIndexCreateCmdArgs(String iName) {
     List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
         "SCHEMA", rangeField, "NUMERIC", "SORTABLE"));
     return args;
@@ -205,7 +212,9 @@ public class RediSearchClient extends DB {
   @Override
   public Status insert(String table, String key,
                        Map<String, ByteIterator> values) {
-    values.put(rangeField, new StringByteIterator(String.valueOf(hash(key))));
+    if (coreWorkload) {
+      values.put(rangeField, new StringByteIterator(String.valueOf(hash(key))));
+    }
     try (Jedis j = getResource(key)) {
       j.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
@@ -268,25 +277,55 @@ public class RediSearchClient extends DB {
                      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
     List<Object> resp;
     try (Jedis j = getResource(startkey)) {
-      int rangeStart = hash(startkey);
-      int rangeEnd = Integer.MAX_VALUE;
       if (orderedinserts) {
-        rangeEnd = rangeStart + recordcount - 1;
+        int rangeStart = hash(startkey);
+        int rangeEnd = rangeStart + recordcount - 1;
+        Pipeline p = j.pipelined();
+        if (fields == null || fields.size() == fieldCount) {
+          for (int i = rangeStart; i < rangeEnd; i++) {
+            p.hgetAll(String.format("user%d", i));
+          }
+        } else {
+          String[] fieldsArray = fields.toArray(new String[fields.size()]);
+          for (int i = rangeStart; i < recordcount; i++) {
+            p.hmget(String.format("user%d", i), fieldsArray);
+          }
+        }
+        // reply processing
+        List<Object> res = p.syncAndReturnAll();
+        if (fields == null || fields.size() == fieldCount) {
+          for (Object reply : res) {
+            HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
+            extractHGetAllResults(values, (Map<String, String>) reply);
+            result.add(values);
+          }
+        } else {
+          for (Object reply : res) {
+            HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
+            extractHmGetResults(fields, values, (List<String>) reply);
+            result.add(values);
+          }
+        }
+      } else {
+        // Unordered solution
+        // insertorder=ordered
+        int rangeStart = hash(startkey);
+        int rangeEnd = Integer.MAX_VALUE;
+        resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
+            scanCommandArgs(indexName, recordcount, rangeStart, rangeEnd, fields));
+        long totalResult = (long) resp.get(0);
+        for (int i = 1; i < resp.size(); i++) {
+          List<byte[]> docFields = (List<byte[]>) resp.get(i);
+          HashMap<String, ByteIterator> values = new HashMap<>();
+          for (int k = 2; k < docFields.size(); k += 2) {
+            values.put(SafeEncoder.encode(docFields.get(k)),
+                new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
+            result.add(values);
+          }
+        }
       }
-      resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
-          scanCommandArgs(indexName, recordcount, rangeStart, rangeEnd, fields));
     } catch (Exception e) {
       return Status.ERROR;
-    }
-    long totalResult = (long) resp.get(0);
-    for (int i = 1; i < resp.size(); i++) {
-      List<byte[]> docFields = (List<byte[]>) resp.get(i);
-      HashMap<String, ByteIterator> values = new HashMap<>();
-      for (int k = 2; k < docFields.size(); k += 2) {
-        values.put(SafeEncoder.encode(docFields.get(k)),
-            new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
-        result.add(values);
-      }
     }
     return Status.OK;
   }

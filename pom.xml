@@ -102,6 +102,11 @@ LICENSE file.
         <artifactId>slf4j-api</artifactId>
         <version>1.7.25</version>
       </dependency>
+      <dependency>
+        <groupId>com.github.javafaker</groupId>
+        <artifactId>javafaker</artifactId>
+        <version>1.0.2</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
