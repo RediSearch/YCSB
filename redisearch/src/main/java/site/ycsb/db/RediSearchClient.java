@@ -308,8 +308,8 @@ public class RediSearchClient extends DB {
     }
     ArrayList<String> scanSearchArgs = new ArrayList<>(Arrays.asList(iName,
         String.format("@%s:[%d +inf]", rangeField, rangeStart),
-        "LIMIT", "0", String.valueOf(rCount), "FIRST"));
-    scanSearchArgs.addAll(Arrays.asList("FIRST", "SORTBY", "2", String.format("@%s", rangeField), "DESC"));
+        "LIMIT", "0", String.valueOf(rCount - 1), "FIRST"));
+    scanSearchArgs.addAll(Arrays.asList("SORTBY", "2", String.format("@%s", rangeField), "DESC"));
     scanSearchArgs.addAll(Arrays.asList("LOAD", String.valueOf(returnFieldsCount)));
 
     if (rFields == null) {
