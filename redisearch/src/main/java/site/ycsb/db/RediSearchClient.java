@@ -44,6 +44,7 @@ public class RediSearchClient extends DB {
   public static final String PORT_PROPERTY = "redisearch.port";
   public static final String PASSWORD_PROPERTY = "redisearch.password";
   public static final String CLUSTER_PROPERTY = "redisearch.cluster";
+  public static final String CLUSTER_PROPERTY_DEFAULT = "redisearch.cluster";
   public static final String TIMEOUT_PROPERTY = "redisearch.timeout";
   public static final String INDEX_NAME_PROPERTY = "redisearch.indexname";
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
@@ -81,7 +82,7 @@ public class RediSearchClient extends DB {
 
     String redisTimeoutStr = props.getProperty(TIMEOUT_PROPERTY);
     String password = props.getProperty(PASSWORD_PROPERTY);
-    clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
+    clusterEnabled = true; // Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
     String portString = props.getProperty(PORT_PROPERTY);
     indexName = props.getProperty(INDEX_NAME_PROPERTY, INDEX_NAME_PROPERTY_DEFAULT);
     rangeField = props.getProperty(RANGE_FIELD_NAME_PROPERTY, RANGE_FIELD_NAME_PROPERTY_DEFAULT);
