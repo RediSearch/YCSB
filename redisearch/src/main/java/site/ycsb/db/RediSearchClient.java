@@ -110,7 +110,7 @@ public class RediSearchClient extends DB {
         List<Object> nodeDetail = (List<Object>) ((List<Object>) slotDetail).get(2);
         String h = new String((byte[]) nodeDetail.get(0));
         long p = (long) nodeDetail.get(1);
-        System.out.println(h + " : " + p);
+        System.err.println(h + " : " + p);
         startNodes.add(new HostAndPort(h, (int) p));
       }
       jedisCluster = new JedisCluster(startNodes, timeout, timeout, 5, password, poolConfig);
@@ -192,12 +192,13 @@ public class RediSearchClient extends DB {
     if (clusterEnabled) {
       if (!topologyUpdated) {
         try {
-          jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key)).exists(key);
+          jedisCluster.exists(key);
         } catch (redis.clients.jedis.exceptions.JedisMovedDataException e) {
           System.err.println(e.getMessage());
         }
         // should pass after updating
-        jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key)).exists(key);
+        jedisCluster.exists(key);
+        topologyUpdated = true;
       }
       return jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
     } else {
