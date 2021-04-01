@@ -205,6 +205,7 @@ public class RediSearchClient extends DB {
       jedisCluster.exists(key);
       topologyUpdated = true;
 //      }
+//      jedisCluster.hset()
       return jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
     } else {
       return jedisPool.getResource();
@@ -287,12 +288,12 @@ public class RediSearchClient extends DB {
     if (coreWorkload) {
       values.put(rangeField, new StringByteIterator(String.valueOf(hash(key))));
     }
-    try (Jedis j = getResource(key)) {
-      j.hset(key, StringByteIterator.getStringMap(values));
+    if (clusterEnabled) {
+      jedisCluster.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
-    } catch (Exception e) {
-//      throw e;
-      return Status.ERROR;
+    } else {
+      jedisPool.getResource().hset(key, StringByteIterator.getStringMap(values));
+      return Status.OK;
     }
   }
 
