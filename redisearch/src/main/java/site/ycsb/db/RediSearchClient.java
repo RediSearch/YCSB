@@ -190,7 +190,7 @@ public class RediSearchClient extends DB {
 
   private Jedis getResource(String key) {
     if (clusterEnabled) {
-      if (!topologyUpdated) {
+//      if (!topologyUpdated) {
         try {
           jedisCluster.exists(key);
         } catch (redis.clients.jedis.exceptions.JedisMovedDataException e) {
@@ -198,8 +198,9 @@ public class RediSearchClient extends DB {
         }
         // should pass after updating
         jedisCluster.exists(key);
+        System.err.println("detected topology change" + );
         topologyUpdated = true;
-      }
+//      }
       return jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
     } else {
       return jedisPool.getResource();
