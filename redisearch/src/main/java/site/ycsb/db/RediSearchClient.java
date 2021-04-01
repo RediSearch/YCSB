@@ -291,8 +291,8 @@ public class RediSearchClient extends DB {
       j.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
     } catch (Exception e) {
-      throw e;
-//      return Status.ERROR;
+//      throw e;
+      return Status.ERROR;
     }
   }
 
