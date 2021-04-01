@@ -56,6 +56,10 @@ public class RediSearchClient extends DB {
   public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redisearch.indexedtextfields";
   //  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName";
+  public static final String CLIENT_POOL_MAX_PROPERTY = "redisearch.client.poolmaxsize";
+  public static final String CLIENT_POOL_MAX_PROPERTY_DEFAULT = "1";
+  public static final String RESULT_PROCESS_PROPERTY = "redisearch.enable.resultprocess";
+  public static final String RESULT_PROCESS_PROPERTY_DEFAULT = "true";
 
 
   private JedisCluster jedisCluster;
@@ -71,7 +75,7 @@ public class RediSearchClient extends DB {
   private Set<String> commerceTagFields;
   private Set<String> commerceTextFields;
   private Set<String> nonIndexFields;
-  private boolean topologyUpdated;
+  private boolean resultProcessing;
 
   @Override
   public void init() throws DBException {
@@ -82,12 +86,13 @@ public class RediSearchClient extends DB {
 
     String redisTimeoutStr = props.getProperty(TIMEOUT_PROPERTY);
     String password = props.getProperty(PASSWORD_PROPERTY);
-    clusterEnabled = true; // Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
+    clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
+    resultProcessing = Boolean.parseBoolean(props.getProperty(RESULT_PROCESS_PROPERTY,
+        RESULT_PROCESS_PROPERTY_DEFAULT));
     String portString = props.getProperty(PORT_PROPERTY);
     indexName = props.getProperty(INDEX_NAME_PROPERTY, INDEX_NAME_PROPERTY_DEFAULT);
     rangeField = props.getProperty(RANGE_FIELD_NAME_PROPERTY, RANGE_FIELD_NAME_PROPERTY_DEFAULT);
     keyprefix = "user";
-    topologyUpdated = true;
     if (portString != null) {
       port = Integer.parseInt(portString);
     }
@@ -101,6 +106,8 @@ public class RediSearchClient extends DB {
     }
 
     JedisPoolConfig poolConfig = new JedisPoolConfig();
+    int poolMaxTotal = Integer.parseInt(props.getProperty(CLIENT_POOL_MAX_PROPERTY, CLIENT_POOL_MAX_PROPERTY_DEFAULT));
+    poolConfig.setMaxTotal(poolMaxTotal);
     if (clusterEnabled) {
       Set<HostAndPort> startNodes = new HashSet<>();
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
@@ -114,7 +121,6 @@ public class RediSearchClient extends DB {
         startNodes.add(new HostAndPort(h, (int) p));
       }
       jedisCluster = new JedisCluster(startNodes, timeout, timeout, 5, password, poolConfig);
-      topologyUpdated = false;
     } else {
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
     }
@@ -190,17 +196,7 @@ public class RediSearchClient extends DB {
 
   private Jedis getResource(String key) {
     if (clusterEnabled) {
-      if (!topologyUpdated) {
-        try {
-          jedisCluster.exists(key);
-        } catch (redis.clients.jedis.exceptions.JedisMovedDataException e) {
-          System.err.println(e.getMessage());
-        }
-        // should pass after updating
-        jedisCluster.exists(key);
-        topologyUpdated = true;
-      }
-      return jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getCRC16(key));
+      return jedisCluster.getConnectionFromSlot(JedisClusterCRC16.getSlot(key));
     } else {
       return jedisPool.getResource();
     }
@@ -248,18 +244,22 @@ public class RediSearchClient extends DB {
   @Override
   public Status read(String table, String key, Set<String> fields,
                      Map<String, ByteIterator> result) {
+    Status res = Status.OK;
     try (Jedis j = getResource(key)) {
       if (fields == null) {
         Map<String, String> reply = j.hgetAll(key);
         extractHGetAllResults(result, reply);
       } else {
         List<String> reply = j.hmget(key, fields.toArray(new String[fields.size()]));
-        extractHmGetResults(fields, result, reply);
+        if (resultProcessing) {
+          extractHmGetResults(fields, result, reply);
+          res = result.isEmpty() ? Status.NOT_FOUND : Status.OK;
+        }
       }
     } catch (Exception e) {
-      return Status.ERROR;
+      res = Status.ERROR;
     }
-    return result.isEmpty() ? Status.ERROR : Status.OK;
+    return res;
   }
 
   private void extractHGetAllResults(Map<String, ByteIterator> result, Map<String, String> reply) {
@@ -286,8 +286,7 @@ public class RediSearchClient extends DB {
       j.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
     } catch (Exception e) {
-      throw e;
-//      return Status.ERROR;
+      return Status.ERROR;
     }
   }
 
@@ -323,21 +322,25 @@ public class RediSearchClient extends DB {
     try (Jedis j = getResource()) {
       resp = (List<Object>) j.sendCommand(RediSearchCommands.SEARCH,
           searchCommandArgs(indexName, queryPair, onlyinsale, pagePair, fields));
-      for (int i = 1; i < resp.size(); i += 2) {
-        List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
-        HashMap<String, ByteIterator> values = new HashMap<>();
-        for (int k = 2; k < docFields.size(); k += 2) {
-          values.put(SafeEncoder.encode(docFields.get(k)),
-              new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
-          result.add(values);
-        }
+      if (resultProcessing) {
+        processFTSearchReply(result, resp);
       }
-
     } catch (Exception e) {
       throw e;
-//      return Status.ERROR;
     }
     return Status.OK;
+  }
+
+  private void processFTSearchReply(Vector<HashMap<String, ByteIterator>> result, List<Object> resp) {
+    for (int i = 1; i < resp.size(); i += 2) {
+      List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
+      HashMap<String, ByteIterator> values = new HashMap<>();
+      for (int k = 2; k < docFields.size(); k += 2) {
+        values.put(SafeEncoder.encode(docFields.get(k)),
+            new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
+        result.add(values);
+      }
+    }
   }
 
   private String[] searchCommandArgs(String idxName, Pair<String, String> queryPair, boolean onlyinsale,
@@ -354,10 +357,6 @@ public class RediSearchClient extends DB {
       String tagValue = queryPair.getValue1().replaceAll(" ", "\\\\ ");
       query = String.format("@%s:{%s}", fieldName, tagValue);
     }
-//
-//    if (onlyinsale) {
-//      query = String.format("@inSale:{1} %s", query);
-//    }
 
     ArrayList<String> searchCommandArgs = new ArrayList<>(Arrays.asList(idxName,
         query,
@@ -402,44 +401,12 @@ public class RediSearchClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount,
                      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-    List<Object> resp;
     try (Jedis j = getResource(startkey)) {
-      if (orderedinserts) {
-        int rangeStart = hash(startkey);
-        int rangeEnd = rangeStart + recordcount - 1;
-        Pipeline p = j.pipelined();
-        if (fields == null || fields.size() == fieldCount) {
-          for (int i = rangeStart; i < rangeEnd; i++) {
-            p.hgetAll(String.format("user%d", i));
-          }
-        } else {
-          String[] fieldsArray = fields.toArray(new String[fields.size()]);
-          for (int i = rangeStart; i < recordcount; i++) {
-            p.hmget(String.format("user%d", i), fieldsArray);
-          }
-        }
-        // reply processing
-        List<Object> res = p.syncAndReturnAll();
-        if (fields == null || fields.size() == fieldCount) {
-          for (Object reply : res) {
-            HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
-            extractHGetAllResults(values, (Map<String, String>) reply);
-            result.add(values);
-          }
-        } else {
-          for (Object reply : res) {
-            HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
-            extractHmGetResults(fields, values, (List<String>) reply);
-            result.add(values);
-          }
-        }
-      } else {
-        // Unordered solution
-        // insertorder=ordered
-        int rangeStart = hash(startkey);
-        int rangeEnd = Integer.MAX_VALUE;
-        resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
-            scanCommandArgs(indexName, recordcount, rangeStart, rangeEnd, fields));
+      int rangeStart = hash(startkey);
+      int rangeEnd = Integer.MAX_VALUE;
+      List<Object> resp = (List<Object>) j.sendCommand(RediSearchCommands.AGGREGATE,
+          scanCommandArgs(indexName, recordcount, rangeStart, rangeEnd, fields));
+      if (resultProcessing) {
         long totalResult = (long) resp.get(0);
         for (int i = 1; i < resp.size(); i++) {
           List<byte[]> docFields = (List<byte[]>) resp.get(i);

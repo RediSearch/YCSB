@@ -236,7 +236,9 @@ public class MongoDbClient extends DB {
         }
 
         readPreference = uri.getOptions().getReadPreference();
+        System.err.println("Mongo using readPreference " + readPreference);
         writeConcern = uri.getOptions().getWriteConcern();
+        System.err.println("Mongo using writeConcern " + writeConcern);
 
         mongoClient = new MongoClient(uri);
         database =
