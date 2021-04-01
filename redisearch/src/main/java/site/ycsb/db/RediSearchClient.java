@@ -249,16 +249,12 @@ public class RediSearchClient extends DB {
   @Override
   public Status read(String table, String key, Set<String> fields,
                      Map<String, ByteIterator> result) {
-    try (Jedis j = getResource(key)) {
-      if (fields == null) {
-        Map<String, String> reply = j.hgetAll(key);
-        extractHGetAllResults(result, reply);
-      } else {
-        List<String> reply = j.hmget(key, fields.toArray(new String[fields.size()]));
-        extractHmGetResults(fields, result, reply);
-      }
-    } catch (Exception e) {
-      return Status.ERROR;
+    if (clusterEnabled) {
+      Map<String, String> reply = jedisCluster.hgetAll(key);
+      extractHGetAllResults(result, reply);
+    } else {
+      Map<String, String> reply = jedisPool.getResource().hgetAll(key);
+      extractHGetAllResults(result, reply);
     }
     return result.isEmpty() ? Status.ERROR : Status.OK;
   }
@@ -294,22 +290,24 @@ public class RediSearchClient extends DB {
 
   @Override
   public Status delete(String table, String key) {
-    try (Jedis j = getResource(key)) {
-      j.del(key);
+    if (clusterEnabled) {
+      jedisCluster.del(key);
       return Status.OK;
-    } catch (Exception e) {
-      return Status.ERROR;
+    } else {
+      jedisPool.getResource().del(key);
+      return Status.OK;
     }
   }
 
   @Override
   public Status update(String table, String key,
                        Map<String, ByteIterator> values) {
-    try (Jedis j = getResource(key)) {
-      j.hset(key, StringByteIterator.getStringMap(values));
+    if (clusterEnabled) {
+      jedisCluster.hset(key, StringByteIterator.getStringMap(values));
       return Status.OK;
-    } catch (Exception e) {
-      return Status.ERROR;
+    } else {
+      jedisPool.getResource().hset(key, StringByteIterator.getStringMap(values));
+      return Status.OK;
     }
   }
 
@@ -321,22 +319,23 @@ public class RediSearchClient extends DB {
                        Vector<HashMap<String, ByteIterator>> result) {
 
     List<Object> resp;
-    try (Jedis j = getResource()) {
-      resp = (List<Object>) j.sendCommand(RediSearchCommands.SEARCH,
+    if (clusterEnabled) {
+      resp = (List<Object>) jedisCluster.getConnectionFromSlot(ThreadLocalRandom.current()
+          .nextInt(JedisCluster.HASHSLOTS)).sendCommand(RediSearchCommands.SEARCH,
           searchCommandArgs(indexName, queryPair, onlyinsale, pagePair, fields));
-      for (int i = 1; i < resp.size(); i += 2) {
-        List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
-        HashMap<String, ByteIterator> values = new HashMap<>();
-        for (int k = 2; k < docFields.size(); k += 2) {
-          values.put(SafeEncoder.encode(docFields.get(k)),
-              new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
-          result.add(values);
-        }
-      }
+    } else {
+      resp = (List<Object>) jedisPool.getResource().sendCommand(RediSearchCommands.SEARCH,
+          searchCommandArgs(indexName, queryPair, onlyinsale, pagePair, fields));
+    }
 
-    } catch (Exception e) {
-      throw e;
-//      return Status.ERROR;
+    for (int i = 1; i < resp.size(); i += 2) {
+      List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
+      HashMap<String, ByteIterator> values = new HashMap<>();
+      for (int k = 2; k < docFields.size(); k += 2) {
+        values.put(SafeEncoder.encode(docFields.get(k)),
+            new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
+        result.add(values);
+      }
     }
     return Status.OK;
   }
