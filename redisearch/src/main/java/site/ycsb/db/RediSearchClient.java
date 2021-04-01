@@ -102,7 +102,7 @@ public class RediSearchClient extends DB {
 
     JedisPoolConfig poolConfig = new JedisPoolConfig();
     if (clusterEnabled) {
-      Set<HostAndPort> startNodes = new HashSet<>(Collections.emptySet());
+      Set<HostAndPort> startNodes = new HashSet<>();
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
       List<Object> clusterNodes = jedisPool.getResource().clusterSlots();
       for (Object slotDetail : clusterNodes
@@ -192,7 +192,7 @@ public class RediSearchClient extends DB {
     if (clusterEnabled) {
       if (!topologyUpdated) {
         try {
-          jedisCluster.exists(key);
+          jedisCluster.getClusterNodes();
         } catch (redis.clients.jedis.exceptions.JedisMovedDataException e) {
           System.err.println(e.getMessage());
         }
