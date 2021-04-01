@@ -102,7 +102,7 @@ public class RediSearchClient extends DB {
 
     JedisPoolConfig poolConfig = new JedisPoolConfig();
     if (clusterEnabled) {
-      Set<HostAndPort> startNodes = new TreeSet<>();
+      Set<HostAndPort> startNodes = new HashSet<>();
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
       List<Object> clusterNodes = jedisPool.getResource().clusterSlots();
       for (Object slotDetail : clusterNodes
