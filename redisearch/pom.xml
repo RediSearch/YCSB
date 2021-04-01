@@ -18,6 +18,18 @@ LICENSE file.
 
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>11</source>
+          <target>11</target>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
   <parent>
     <groupId>site.ycsb</groupId>
     <artifactId>binding-parent</artifactId>
@@ -25,15 +37,15 @@ LICENSE file.
     <relativePath>../binding-parent</relativePath>
   </parent>
   
-  <artifactId>redis-binding</artifactId>
-  <name>Redis DB Binding</name>
+  <artifactId>redisearch-binding</artifactId>
+  <name>RediSearch DB Binding</name>
   <packaging>jar</packaging>
 
   <dependencies>
     <dependency>
       <groupId>redis.clients</groupId>
       <artifactId>jedis</artifactId>
-      <version>${jedis.redis.version}</version>
+      <version>${jedis.redisearch.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.commons</groupId>
@@ -51,6 +63,23 @@ LICENSE file.
       <artifactId>core</artifactId>
       <version>${project.version}</version>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>2.11.2</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-to-slf4j</artifactId>
+      <version>2.11.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.ignite</groupId>
+      <artifactId>ignite-log4j2</artifactId>
+      <version>${ignite.version}</version>
+      <scope>compile</scope>
     </dependency>
   </dependencies>
 </project>

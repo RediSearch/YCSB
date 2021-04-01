@@ -102,6 +102,11 @@ LICENSE file.
         <artifactId>slf4j-api</artifactId>
         <version>1.7.25</version>
       </dependency>
+      <dependency>
+        <groupId>com.github.javafaker</groupId>
+        <artifactId>javafaker</artifactId>
+        <version>1.0.2</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -133,12 +138,13 @@ LICENSE file.
     <infinispan.version>7.2.2.Final</infinispan.version>
     <kudu.version>1.11.1</kudu.version>
     <maprhbase.version>1.1.8-mapr-1710</maprhbase.version>
-    <mongodb.version>3.11.0</mongodb.version>
+    <mongodb.version>3.12.8</mongodb.version>
     <mongodb.async.version>2.0.1</mongodb.async.version>
     <openjpa.jdbc.version>2.1.1</openjpa.jdbc.version>
     <orientdb.version>2.2.37</orientdb.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <redis.version>2.9.0</redis.version>
+    <jedis.redis.version>2.10.2</jedis.redis.version>
+    <jedis.redisearch.version>3.5.2</jedis.redisearch.version>
     <riak.version>2.0.5</riak.version>
     <rocksdb.version>6.2.2</rocksdb.version>
     <s3.version>1.10.20</s3.version>
@@ -192,6 +198,7 @@ LICENSE file.
     <module>postgrenosql</module>
     <module>rados</module>
     <module>redis</module>
+    <module>redisearch</module>
     <module>rest</module>
     <module>riak</module>
     <module>rocksdb</module>
