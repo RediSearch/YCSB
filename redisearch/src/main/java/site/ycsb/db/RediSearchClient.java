@@ -114,11 +114,6 @@ public class RediSearchClient extends DB {
         startNodes.add(new HostAndPort(h, (int) p));
       }
       jedisCluster = new JedisCluster(startNodes, timeout, timeout, 5, password, poolConfig);
-      for (Object slotDetail : jedisCluster.getClusterNodes().keySet()
-      ) {
-        System.err.println(slotDetail + " : " + jedisCluster.getClusterNodes().get(slotDetail).getResource().ping());
-      }
-      topologyUpdated = false;
     } else {
       jedisPool = new JedisPool(poolConfig, host, port, timeout, password);
     }
