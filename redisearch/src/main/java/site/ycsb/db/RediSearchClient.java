@@ -192,7 +192,7 @@ public class RediSearchClient extends DB {
     if (clusterEnabled) {
       if (!topologyUpdated) {
         try {
-          jedisCluster.getClusterNodes();
+          jedisCluster.exists(key);
         } catch (redis.clients.jedis.exceptions.JedisMovedDataException e) {
           System.err.println(e.getMessage());
         }
