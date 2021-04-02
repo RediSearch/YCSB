@@ -166,6 +166,7 @@ public class ElasticsearchRestClient extends DB {
         builder.field("index.number_of_shards", numberOfShards);
         builder.field("index.number_of_replicas", numberOfReplicas);
         builder.field("index.refresh_interval", "-1");
+        builder.field("index.translog.flush_threshold_size", "1024MB");
         //   }
         builder.endObject();
         // }
@@ -254,14 +255,15 @@ public class ElasticsearchRestClient extends DB {
 
       final Map<String, Object> map = map(searchResponse);
       @SuppressWarnings("unchecked") final Map<String, Object> hits = (Map<String, Object>) map.get("hits");
-      final int total = (int) hits.get("total");
+      final int total = getTotalHits(hits);
       if (total == 0) {
         return Status.NOT_FOUND;
       }
       @SuppressWarnings("unchecked") final Map<String, Object> hit =
           (Map<String, Object>) ((List<Object>) hits.get("hits")).get(0);
+      String hitIdStr = (String) hit.get("_id");
       final Response deleteResponse = performRequest(restClient, "DELETE",
-          "/" + indexKey + "/" + table + "/" + hit.get("_id"));
+          "/" + indexKey + "/" + hitIdStr);
       if (deleteResponse.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
         return Status.ERROR;
       }
@@ -296,7 +298,7 @@ public class ElasticsearchRestClient extends DB {
 
       final Map<String, Object> map = map(searchResponse);
       @SuppressWarnings("unchecked") final Map<String, Object> hits = (Map<String, Object>) map.get("hits");
-      final int total = (int) hits.get("total");
+      final int total = getTotalHits(hits);
       if (total == 0) {
         return Status.NOT_FOUND;
       }
@@ -323,6 +325,12 @@ public class ElasticsearchRestClient extends DB {
     }
   }
 
+  private int getTotalHits(Map<String, Object> hits) {
+    @SuppressWarnings("unchecked") final Map<String, Object> hitsTotal = (Map<String, Object>) hits.get("total");
+    final int total = (int) hitsTotal.get("value");
+    return total;
+  }
+
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
@@ -336,7 +344,7 @@ public class ElasticsearchRestClient extends DB {
 
       final Map<String, Object> map = map(searchResponse);
       @SuppressWarnings("unchecked") final Map<String, Object> hits = (Map<String, Object>) map.get("hits");
-      final int total = (int) hits.get("total");
+      final int total = getTotalHits(hits);
       if (total == 0) {
         return Status.NOT_FOUND;
       }
@@ -347,10 +355,12 @@ public class ElasticsearchRestClient extends DB {
         source.put(entry.getKey(), entry.getValue());
       }
       final Map<String, String> params = emptyMap();
+      NStringEntity payload = new NStringEntity(new ObjectMapper().writeValueAsString(source));
+      payload.setContentType(CONTENT_TYPE_APPLICATION_JSON);
       final Response response = performRequest(restClient, "PUT",
-          "/" + indexKey + "/" + table + "/" + hit.get("_id"),
+          "/" + indexKey + "/_doc/" + hit.get("_id"),
           params,
-          new NStringEntity(new ObjectMapper().writeValueAsString(source)), null
+          payload, null
       );
       if (response.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
         return Status.ERROR;
@@ -390,35 +400,40 @@ public class ElasticsearchRestClient extends DB {
         builder.field("size", recordcount);
         builder.endObject();
         response = search(table, builder);
-        @SuppressWarnings("unchecked") final Map<String, Object> map = map(response);
-        @SuppressWarnings("unchecked") final Map<String, Object> hits = (Map<String, Object>) map.get("hits");
-        @SuppressWarnings("unchecked") final List<Map<String, Object>> list =
-            (List<Map<String, Object>>) hits.get("hits");
-
-        for (final Map<String, Object> hit : list) {
-          @SuppressWarnings("unchecked") final Map<String, Object> source = (Map<String, Object>) hit.get("_source");
-          final HashMap<String, ByteIterator> entry;
-          if (fields != null) {
-            entry = new HashMap<>(fields.size());
-            for (final String field : fields) {
-              entry.put(field, new StringByteIterator((String) source.get(field)));
-            }
-          } else {
-            entry = new HashMap<>(hit.size());
-            for (final Map.Entry<String, Object> field : source.entrySet()) {
-              if (KEY.equals(field.getKey())) {
-                continue;
-              }
-              entry.put(field.getKey(), new StringByteIterator((String) field.getValue()));
-            }
-          }
-          result.add(entry);
-        }
+        processSearchReply(fields, result, response);
       }
       return Status.OK;
     } catch (final Exception e) {
       e.printStackTrace();
       return Status.ERROR;
+    }
+  }
+
+  private void processSearchReply(Set<String> fields, Vector<HashMap<String, ByteIterator>> result, Response response)
+      throws IOException {
+    @SuppressWarnings("unchecked") final Map<String, Object> map = map(response);
+    @SuppressWarnings("unchecked") final Map<String, Object> hits = (Map<String, Object>) map.get("hits");
+    @SuppressWarnings("unchecked") final List<Map<String, Object>> list =
+        (List<Map<String, Object>>) hits.get("hits");
+
+    for (final Map<String, Object> hit : list) {
+      @SuppressWarnings("unchecked") final Map<String, Object> source = (Map<String, Object>) hit.get("_source");
+      final HashMap<String, ByteIterator> entry;
+      if (fields != null) {
+        entry = new HashMap<>(fields.size());
+        for (final String field : fields) {
+          entry.put(field, new StringByteIterator((String) source.get(field)));
+        }
+      } else {
+        entry = new HashMap<>(hit.size());
+        for (final Map.Entry<String, Object> field : source.entrySet()) {
+          if (KEY.equals(field.getKey())) {
+            continue;
+          }
+          entry.put(field.getKey(), new StringByteIterator((String) field.getValue()));
+        }
+      }
+      result.add(entry);
     }
   }
 
@@ -428,8 +443,31 @@ public class ElasticsearchRestClient extends DB {
                        Pair<Integer, Integer> pagePair,
                        HashSet<String> fields,
                        Vector<HashMap<String, ByteIterator>> result) {
-
-    return Status.OK;
+    try {
+      final Response response;
+      try (XContentBuilder builder = jsonBuilder()) {
+        builder.startObject();
+        builder.startObject("query");
+        builder.startObject("term");
+        builder.field("productName", queryPair.getValue1());
+        builder.endObject();
+        builder.endObject();
+        builder.endObject();
+        builder.field("size", pagePair.getValue1().intValue());
+        builder.startArray("sort");
+        builder.startObject("productScore");
+        builder.field("order", "asc");
+        builder.endObject();
+        builder.endArray();
+        builder.endObject();
+        response = search(table, builder);
+        processSearchReply(fields, result, response);
+      }
+      return Status.OK;
+    } catch (final Exception e) {
+      e.printStackTrace();
+      return Status.ERROR;
+    }
   }
 
   private void refreshIfNeeded() throws IOException, DBException {
@@ -466,7 +504,8 @@ public class ElasticsearchRestClient extends DB {
     refreshIfNeeded();
     final Map<String, String> params = emptyMap();
     final StringEntity entity = new StringEntity(builder.string());
-    return performRequest(restClient, "GET", "/" + indexKey + "/" + table + "/_search",
+    entity.setContentType(CONTENT_TYPE_APPLICATION_JSON);
+    return performRequest(restClient, "GET", "/" + indexKey + "/_search",
         params, entity, null);
   }
 
