@@ -177,8 +177,13 @@ public class ElasticsearchRestClient extends DB {
       data.put(KEY, key);
       NStringEntity payload = new NStringEntity(new ObjectMapper().writeValueAsString(data));
       payload.setContentType(CONTENT_TYPE_APPLICATION_JSON);
+      // Reason why we use auto-generated ids and not the specific key id
+      // https://www.elastic.co/guide/en/elasticsearch/reference/master/tune-for-indexing-speed.html
+      // When indexing a document that has an explicit id, Elasticsearch needs to check whether a document with the
+      // same id already exists within the same shard, which is a costly operation and gets even more costly as
+      // the index grows. By using auto-generated ids, Elasticsearch can skip this check, which makes indexing faster.
       final Response response = performRequest(restClient, "POST",
-          "/" + indexKey + "/_doc/" + key,
+          "/" + indexKey + "/_doc",
           Collections.emptyMap(),
           payload,
           null
