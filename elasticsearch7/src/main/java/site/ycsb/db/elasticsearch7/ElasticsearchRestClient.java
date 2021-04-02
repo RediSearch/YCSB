@@ -452,13 +452,14 @@ public class ElasticsearchRestClient extends DB {
         builder.field("productName", queryPair.getValue1());
         builder.endObject();
         builder.endObject();
-        builder.endObject();
-        builder.field("size", pagePair.getValue1().intValue());
         builder.startArray("sort");
+        builder.startObject();
         builder.startObject("productScore");
         builder.field("order", "asc");
         builder.endObject();
+        builder.endObject();
         builder.endArray();
+        builder.field("size", pagePair.getValue1());
         builder.endObject();
         response = search(table, builder);
         processSearchReply(fields, result, response);
