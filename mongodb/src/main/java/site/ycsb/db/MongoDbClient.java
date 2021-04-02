@@ -255,6 +255,7 @@ public class MongoDbClient extends DB {
             return;
           }
           collection.createIndex(Indexes.text(indexedFields[0]));
+          collection.createIndex(Indexes.descending("productScore"));
           System.out.println("Created text fields for Commerce workload");
 
         }
