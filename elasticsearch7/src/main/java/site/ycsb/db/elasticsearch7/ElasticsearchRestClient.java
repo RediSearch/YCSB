@@ -103,7 +103,7 @@ public class ElasticsearchRestClient extends DB {
     final int numberOfShards = parseIntegerProperty(props, "es.number_of_shards", NUMBER_OF_SHARDS);
     final int numberOfReplicas = parseIntegerProperty(props, "es.number_of_replicas", NUMBER_OF_REPLICAS);
 
-    final Boolean newIndex = Boolean.parseBoolean(props.getProperty("es.new_index", "false"));
+    final Boolean newIndex = Boolean.parseBoolean(props.getProperty("es.new_index", "true"));
 
     final String[] nodeList = props.getProperty("es.hosts.list", DEFAULT_REMOTE_HOST).split(",");
 
