@@ -30,6 +30,7 @@ import org.elasticsearch.client.RestClient;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.javatuples.Pair;
 import site.ycsb.*;
+import site.ycsb.workloads.CommerceWorkload;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -103,7 +104,7 @@ public class ElasticsearchRestClient extends DB {
     final int numberOfShards = parseIntegerProperty(props, "es.number_of_shards", NUMBER_OF_SHARDS);
     final int numberOfReplicas = parseIntegerProperty(props, "es.number_of_replicas", NUMBER_OF_REPLICAS);
 
-    final Boolean newIndex = Boolean.parseBoolean(props.getProperty("es.new_index", "true"));
+    final Boolean newIndex = Boolean.parseBoolean(props.getProperty("es.new_index", "false"));
 
     final String[] nodeList = props.getProperty("es.hosts.list", DEFAULT_REMOTE_HOST).split(",");
 
@@ -130,10 +131,44 @@ public class ElasticsearchRestClient extends DB {
     if (!exists || newIndex) {
       try (XContentBuilder builder = jsonBuilder()) {
         builder.startObject();
+        // {
+        builder.startObject("mappings");
+        //   {
+        builder.startObject("properties");
+        //     {
+        builder.startObject("productName");
+        //       {
+        builder.field("type", "text");
+        //       }
+        builder.endObject();
+        builder.startObject("productScore");
+        //       {
+        builder.field("type", "double");
+        //       }
+        builder.endObject();
+        for (String fieldName :
+            props.getProperty(CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY,
+                CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT).split(",")
+        ) {
+          builder.startObject(fieldName);
+          //       {
+          builder.field("index", "false");
+          builder.field("type", "text");
+          //       }
+          builder.endObject();
+        }
+        //     }
+        builder.endObject();
+        //   }
+        builder.endObject();
         builder.startObject("settings");
+        //   {
         builder.field("index.number_of_shards", numberOfShards);
         builder.field("index.number_of_replicas", numberOfReplicas);
+        builder.field("index.refresh_interval", "-1");
+        //   }
         builder.endObject();
+        // }
         builder.endObject();
         final Map<String, String> params = emptyMap();
         final StringEntity entity = new StringEntity(builder.string());
