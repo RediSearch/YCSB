@@ -140,10 +140,13 @@ public class RediSearchClient extends DB {
         commerceTagFields = new TreeSet<>();
         commerceTextFields = new TreeSet<>();
         nonIndexFields = new TreeSet<>();
-        for (String tagFieldName :
-            props.getProperty(INDEXED_TAG_FIELDS_PROPERTY, INDEXED_TAG_FIELDS_PROPERTY_DEFAULT).split(",")
-        ) {
-          commerceTagFields.add(tagFieldName);
+        String[] tagFields = props.getProperty(INDEXED_TAG_FIELDS_PROPERTY,
+            INDEXED_TAG_FIELDS_PROPERTY_DEFAULT).split(",");
+        if (tagFields.length > 0) {
+          for (String tagFieldName : tagFields
+          ) {
+            commerceTagFields.add(tagFieldName);
+          }
         }
         for (String textFieldName :
             props.getProperty(INDEXED_TEXT_FIELDS_PROPERTY, INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT).split(",")
@@ -168,7 +171,7 @@ public class RediSearchClient extends DB {
 
   private List<String> commerceWorkloadIndexCreateCmdArgs(String iName) {
     List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
-        "SCORE_FIELD", "productScore", "NOHL", "NOFIELDS", "NOFREQS",
+        "SCORE_FIELD", "productScore", "NOFIELDS", "NOFREQS", "NOOFFSETS",
         "SCHEMA"));
     Iterator iterator = commerceTagFields.iterator();
     while (iterator.hasNext()) {
