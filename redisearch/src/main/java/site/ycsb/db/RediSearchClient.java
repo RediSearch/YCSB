@@ -174,17 +174,17 @@ public class RediSearchClient extends DB {
         "SCORE_FIELD", "productScore", "NOFIELDS", "NOFREQS", "NOOFFSETS",
         "SCHEMA"));
     Iterator iterator = commerceTagFields.iterator();
-    while (iterator.hasNext()) {
-      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TAG")));
-    }
+//    while (iterator.hasNext()) {
+//      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TAG")));
+//    }
     iterator = commerceTextFields.iterator();
     while (iterator.hasNext()) {
       args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "SORTABLE")));
     }
-    iterator = nonIndexFields.iterator();
-    while (iterator.hasNext()) {
-      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "NOINDEX")));
-    }
+//    iterator = nonIndexFields.iterator();
+//    while (iterator.hasNext()) {
+//      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "NOINDEX")));
+//    }
     return args;
   }
 
