@@ -355,7 +355,7 @@ public class RediSearchClient extends DB {
     String fieldName = queryPair.getValue0();
     String query;
     if (commerceTextFields.contains(fieldName)) {
-      query = String.format("@%s:%s", fieldName, queryPair.getValue1());
+      query = queryPair.getValue1();
     } else {
       String tagValue = queryPair.getValue1().replaceAll(" ", "\\\\ ");
       query = String.format("@%s:{%s}", fieldName, tagValue);
