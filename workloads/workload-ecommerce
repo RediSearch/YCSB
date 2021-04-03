@@ -21,7 +21,7 @@
 #                        - Backoffice: Product updates and product inserts being showcase by update/insert queries.
 #
 #                        
-#   Read/Update/Search/Insert ratio: 60/20/20/10
+#   Read/Update/Search/Insert ratio: 15/0/85/0
 #   Default data size: 500 B records, plus key
 #   Request distribution: zipfian
 
@@ -38,10 +38,10 @@ searchlengthdistribution=zipfian
 maxsearchlength=20
 minsearchlength=3
 
-readproportion=0.85
-searchproportion=0.12
-updateproportion=0.02
-insertproportion=0.01
+readproportion=0.15
+searchproportion=0.85
+updateproportion=0.0
+insertproportion=0.0
 scanproportion=0
 readmodifywriteproportion=0
 
