@@ -449,7 +449,7 @@ public class ElasticsearchRestClient extends DB {
         builder.startObject();
         builder.startObject("query");
         builder.startObject("term");
-        builder.field("productName", queryPair.getValue1());
+        builder.field("productName", queryPair.getValue1().split(" ")[0]);
         builder.endObject();
         builder.endObject();
         builder.startArray("sort");
