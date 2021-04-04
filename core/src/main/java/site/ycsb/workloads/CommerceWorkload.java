@@ -133,7 +133,8 @@ public class CommerceWorkload extends CoreWorkload {
    */
   @Override
   public void init(Properties p) throws WorkloadException {
-    faker = new Faker(new Locale("en"));
+    Random rand = new Random(12345);
+    faker = new Faker(new Locale("en"), rand);
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
 
     recordcount =
@@ -231,7 +232,7 @@ public class CommerceWorkload extends CoreWorkload {
         SEARCH_FIELDS_PROPORTION_PROPERTY_DEFAULT).split(",");
     indexedFieldsProportionPDF = new ArrayList<Double>();
     double currentPDF = 0.0;
-    for (String indexedFieldProportion:indexedFieldsProportionStr) {
+    for (String indexedFieldProportion : indexedFieldsProportionStr) {
       currentPDF += Double.parseDouble(indexedFieldProportion);
       indexedFieldsProportionPDF.add(currentPDF);
     }
@@ -291,20 +292,20 @@ public class CommerceWorkload extends CoreWorkload {
       return false;
     }
     switch (operation) {
-    case "READ":
-      doTransactionRead(db);
-      break;
-    case "UPDATE":
-      doTransactionUpdate(db);
-      break;
-    case "INSERT":
-      doTransactionInsert(db);
-      break;
-    case "SEARCH":
-      doTransactionSearch(db);
-      break;
-    default:
-      return false;
+      case "READ":
+        doTransactionRead(db);
+        break;
+      case "UPDATE":
+        doTransactionUpdate(db);
+        break;
+      case "INSERT":
+        doTransactionInsert(db);
+        break;
+      case "SEARCH":
+        doTransactionSearch(db);
+        break;
+      default:
+        return false;
     }
 
     return true;
@@ -391,32 +392,32 @@ public class CommerceWorkload extends CoreWorkload {
         .nextDouble();
     String fieldName = indexedFields[0];
     double fieldPDF = indexedFieldsProportionPDF.get(0);
-    for (int pos = 1; rnd<fieldPDF && pos < indexedFieldsProportionPDF.size(); pos++){
-      fieldPDF=indexedFieldsProportionPDF.get(pos);
-      fieldName=indexedFields[pos];
+    for (int pos = 1; rnd < fieldPDF && pos < indexedFieldsProportionPDF.size(); pos++) {
+      fieldPDF = indexedFieldsProportionPDF.get(pos);
+      fieldName = indexedFields[pos];
     }
     return fieldName;
   }
 
   private String getRandomFieldValue(String fieldName, String textquerytosearch) {
-    switch (fieldName){
-    case "brand":
-      textquerytosearch = faker.company().name().replaceAll("[^a-zA-Z0-9]", " ");
-      break;
-    case "color":
-      textquerytosearch = faker.color().name().replaceAll("[^a-zA-Z0-9]", " ");
-      break;
-    case "department":
-      textquerytosearch = faker.commerce().department().replaceAll("[^a-zA-Z0-9]", " ");
-      break;
-    case "productName":
-      textquerytosearch = faker.commerce().productName();
-      break;
-    case "productDescription":
-      textquerytosearch = faker.company().catchPhrase().split(" ")[0];
-      break;
-    default:
-      break;
+    switch (fieldName) {
+      case "brand":
+        textquerytosearch = faker.company().name().replaceAll("[^a-zA-Z0-9]", " ");
+        break;
+      case "color":
+        textquerytosearch = faker.color().name().replaceAll("[^a-zA-Z0-9]", " ");
+        break;
+      case "department":
+        textquerytosearch = faker.commerce().department().replaceAll("[^a-zA-Z0-9]", " ");
+        break;
+      case "productName":
+        textquerytosearch = faker.commerce().productName();
+        break;
+      case "productDescription":
+        textquerytosearch = faker.company().catchPhrase().split(" ")[0];
+        break;
+      default:
+        break;
     }
     return textquerytosearch;
   }
