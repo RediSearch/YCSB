@@ -292,20 +292,20 @@ public class CommerceWorkload extends CoreWorkload {
       return false;
     }
     switch (operation) {
-      case "READ":
-        doTransactionRead(db);
-        break;
-      case "UPDATE":
-        doTransactionUpdate(db);
-        break;
-      case "INSERT":
-        doTransactionInsert(db);
-        break;
-      case "SEARCH":
-        doTransactionSearch(db);
-        break;
-      default:
-        return false;
+    case "READ":
+      doTransactionRead(db);
+      break;
+    case "UPDATE":
+      doTransactionUpdate(db);
+      break;
+    case "INSERT":
+      doTransactionInsert(db);
+      break;
+    case "SEARCH":
+      doTransactionSearch(db);
+      break;
+    default:
+      return false;
     }
 
     return true;
@@ -401,23 +401,23 @@ public class CommerceWorkload extends CoreWorkload {
 
   private String getRandomFieldValue(String fieldName, String textquerytosearch) {
     switch (fieldName) {
-      case "brand":
-        textquerytosearch = faker.company().name().replaceAll("[^a-zA-Z0-9]", " ");
-        break;
-      case "color":
-        textquerytosearch = faker.color().name().replaceAll("[^a-zA-Z0-9]", " ");
-        break;
-      case "department":
-        textquerytosearch = faker.commerce().department().replaceAll("[^a-zA-Z0-9]", " ");
-        break;
-      case "productName":
-        textquerytosearch = faker.commerce().productName();
-        break;
-      case "productDescription":
-        textquerytosearch = faker.company().catchPhrase().split(" ")[0];
-        break;
-      default:
-        break;
+    case "brand":
+      textquerytosearch = faker.company().name().replaceAll("[^a-zA-Z0-9]", " ");
+      break;
+    case "color":
+      textquerytosearch = faker.color().name().replaceAll("[^a-zA-Z0-9]", " ");
+      break;
+    case "department":
+      textquerytosearch = faker.commerce().department().replaceAll("[^a-zA-Z0-9]", " ");
+      break;
+    case "productName":
+      textquerytosearch = faker.commerce().productName();
+      break;
+    case "productDescription":
+      textquerytosearch = faker.company().catchPhrase().split(" ")[0];
+      break;
+    default:
+      break;
     }
     return textquerytosearch;
   }
