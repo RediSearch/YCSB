@@ -460,6 +460,7 @@ public class ElasticsearchRestClient extends DB {
         builder.endObject();
         builder.endArray();
         builder.field("size", pagePair.getValue1());
+        builder.field("track_total_hits", true);
         builder.endObject();
         response = search(table, builder);
         processSearchReply(fields, result, response);
