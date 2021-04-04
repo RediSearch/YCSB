@@ -179,7 +179,7 @@ public class RediSearchClient extends DB {
 //    }
     iterator = commerceTextFields.iterator();
     while (iterator.hasNext()) {
-      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "SORTABLE", "NOSTEM")));
+      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "NOSTEM", "SORTABLE")));
     }
 //    iterator = nonIndexFields.iterator();
 //    while (iterator.hasNext()) {
