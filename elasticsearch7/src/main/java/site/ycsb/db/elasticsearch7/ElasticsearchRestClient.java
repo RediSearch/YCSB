@@ -166,7 +166,7 @@ public class ElasticsearchRestClient extends DB {
         builder.field("index.number_of_shards", numberOfShards);
         builder.field("index.number_of_replicas", numberOfReplicas);
         builder.field("index.refresh_interval", "-1");
-        builder.field("index.translog.flush_threshold_size", "1024MB");
+        builder.field("index.queries.cache.enabled", false);
         //   }
         builder.endObject();
         // }
