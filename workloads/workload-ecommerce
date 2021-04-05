@@ -25,7 +25,9 @@
 #   Default data size: 500 B records, plus key
 #   Request distribution: zipfian
 
-dictfile=./bin/words_alpha.txt
+# The UCI online retail file contains product names retrieved from the open
+# benchmark https://archive.ics.uci.edu/ml/datasets/Online+Retail+II
+dictfile=./bin/uci_online_retail.csv
 recordcount=1000
 operationcount=1000
 workload=site.ycsb.workloads.CommerceWorkload

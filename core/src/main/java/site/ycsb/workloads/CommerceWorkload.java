@@ -36,7 +36,7 @@ public class CommerceWorkload extends CoreWorkload {
 
   public static final String SEARCH_WORDS_DICT_PROPERTY = "dictfile";
   public static final String SEARCH_WORDS_DICT_DEFAULT =
-      "words_alpha.txt";
+      "uci_online_retail.txt";
 
   public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY = "nonindexedfields";
   public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
@@ -75,6 +75,7 @@ public class CommerceWorkload extends CoreWorkload {
   private String[] indexedFields;
   private ArrayList<Double> indexedFieldsProportionPDF;
   private ArrayList<String> searchDict;
+  private int ingestDictPos;
   private Faker faker;
   private Random rand;
 
@@ -142,6 +143,7 @@ public class CommerceWorkload extends CoreWorkload {
    */
   @Override
   public void init(Properties p) throws WorkloadException {
+    ingestDictPos = 0;
     rand = new Random(12345);
     faker = new Faker(new Locale("en"), rand);
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
@@ -258,9 +260,12 @@ public class CommerceWorkload extends CoreWorkload {
       String line = reader.readLine();
       while (line != null) {
         line = reader.readLine();
-        searchDict.add(line);
-        if(searchDict.size()%100000==0){
-          System.err.println("Read " + searchDict.size());
+        if (line != null){
+          line = line.replaceAll("[^\\p{L} \\p{Nd}]+", "");
+          searchDict.add(line);
+          if(searchDict.size()%100000==0){
+            System.err.println("Read " + searchDict.size());
+          }
         }
       }
       reader.close();
@@ -446,8 +451,7 @@ public class CommerceWorkload extends CoreWorkload {
       textquerytosearch = faker.commerce().department().replaceAll("[^a-zA-Z0-9]", " ");
       break;
     case "productName":
-      textquerytosearch = searchDict.get(rand.nextInt(searchDict.size()))
-          + " " + searchDict.get(rand.nextInt(searchDict.size()));
+      textquerytosearch = searchDict.get(rand.nextInt(searchDict.size()));
       break;
     case "productDescription":
       textquerytosearch = faker.company().catchPhrase().split(" ")[0];
@@ -462,9 +466,11 @@ public class CommerceWorkload extends CoreWorkload {
    * Builds values for all fields.
    */
   protected HashMap<String, ByteIterator> buildValues(String key) {
+    if (ingestDictPos>=searchDict.size()){
+      ingestDictPos=0;
+    }
     HashMap<String, ByteIterator> values = new HashMap<>();
-    String productName = searchDict.get(rand.nextInt(searchDict.size()))
-        + " " + searchDict.get(rand.nextInt(searchDict.size()));
+    String productName = searchDict.get(ingestDictPos);
     values.put("productName", new StringByteIterator(productName));
     values.put("productScore", new StringByteIterator(String.valueOf(1.0 - ThreadLocalRandom.current()
         .nextDouble())));
@@ -494,6 +500,7 @@ public class CommerceWorkload extends CoreWorkload {
     values.put("creator", new StringByteIterator(faker.artist().name()
         .replaceAll("[^a-zA-Z0-9]", " ")));
     values.put("shipsFrom", new StringByteIterator(faker.country().countryCode3()));
+    ingestDictPos++;
     return values;
   }
 
