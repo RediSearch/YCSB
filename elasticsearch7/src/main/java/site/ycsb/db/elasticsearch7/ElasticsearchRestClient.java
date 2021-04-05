@@ -507,7 +507,7 @@ public class ElasticsearchRestClient extends DB {
     final Map<String, String> params = emptyMap();
     final StringEntity entity = new StringEntity(builder.string());
     entity.setContentType(CONTENT_TYPE_APPLICATION_JSON);
-    return performRequest(restClient, "GET", "/" + indexKey + "/_search",
+    return performRequest(restClient, "GET", "/" + indexKey + "/_search?request_cache=false",
         params, entity, null);
   }
 
