@@ -5,6 +5,9 @@ import org.javatuples.Pair;
 import site.ycsb.*;
 import site.ycsb.generator.*;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -30,6 +33,10 @@ public class CommerceWorkload extends CoreWorkload {
   public static final String INDEXED_FIELDS_SEARCH_PROPERTY = "indexedfields";
   public static final String INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
       "productName";
+
+  public static final String SEARCH_WORDS_DICT_PROPERTY = "dictfile";
+  public static final String SEARCH_WORDS_DICT_DEFAULT =
+      "words_alpha.txt";
 
   public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY = "nonindexedfields";
   public static final String NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT =
@@ -67,7 +74,9 @@ public class CommerceWorkload extends CoreWorkload {
   protected NumberGenerator searchlength;
   private String[] indexedFields;
   private ArrayList<Double> indexedFieldsProportionPDF;
+  private ArrayList<String> searchDict;
   private Faker faker;
+  private Random rand;
 
   public static String buildKeyName(long keynum, int zeropadding, boolean orderedinserts) {
     if (!orderedinserts) {
@@ -133,7 +142,7 @@ public class CommerceWorkload extends CoreWorkload {
    */
   @Override
   public void init(Properties p) throws WorkloadException {
-    Random rand = new Random(12345);
+    rand = new Random(12345);
     faker = new Faker(new Locale("en"), rand);
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
 
@@ -235,6 +244,29 @@ public class CommerceWorkload extends CoreWorkload {
     for (String indexedFieldProportion : indexedFieldsProportionStr) {
       currentPDF += Double.parseDouble(indexedFieldProportion);
       indexedFieldsProportionPDF.add(currentPDF);
+    }
+
+    BufferedReader reader;
+    String filename = p.getProperty(SEARCH_WORDS_DICT_PROPERTY,
+        SEARCH_WORDS_DICT_DEFAULT);
+    System.err.println("Loading search dictionary from: " + filename);
+    searchDict = new ArrayList<String>();
+    try {
+
+      reader = new BufferedReader(new FileReader(
+          filename));
+      String line = reader.readLine();
+      while (line != null) {
+        line = reader.readLine();
+        searchDict.add(line);
+        if(searchDict.size()%100000==0){
+          System.err.println("Read " + searchDict.size());
+        }
+      }
+      reader.close();
+      System.err.println("using a dictionary of " + searchDict.size() + " to generate productName and search terms");
+    } catch (IOException e) {
+      e.printStackTrace();
     }
 
   }
@@ -382,9 +414,12 @@ public class CommerceWorkload extends CoreWorkload {
         .nextBoolean();
     Pair<String, String> queryPair = Pair.with(fieldName, textquerytosearch);
     Pair<Integer, Integer> pagePair = Pair.with(replystartpos, len);
-
-    db.search(table, queryPair, onlyinsale, pagePair, fields,
-        new Vector<HashMap<String, ByteIterator>>());
+    Vector<HashMap<String, ByteIterator>> results = new Vector<HashMap<String, ByteIterator>>();
+    long st = System.nanoTime();
+    db.search(table, queryPair, onlyinsale, pagePair, fields, results);
+    long en = System.nanoTime();
+//    results.size()
+    measurements.measure("SEARCH", (int) ((en - st) / 1000));
   }
 
   private String randomIndexedFieldName() {
@@ -411,7 +446,8 @@ public class CommerceWorkload extends CoreWorkload {
       textquerytosearch = faker.commerce().department().replaceAll("[^a-zA-Z0-9]", " ");
       break;
     case "productName":
-      textquerytosearch = faker.commerce().productName();
+      textquerytosearch = searchDict.get(rand.nextInt(searchDict.size()))
+          + " " + searchDict.get(rand.nextInt(searchDict.size()));
       break;
     case "productDescription":
       textquerytosearch = faker.company().catchPhrase().split(" ")[0];
@@ -427,7 +463,9 @@ public class CommerceWorkload extends CoreWorkload {
    */
   protected HashMap<String, ByteIterator> buildValues(String key) {
     HashMap<String, ByteIterator> values = new HashMap<>();
-    values.put("productName", new StringByteIterator(faker.commerce().productName()));
+    String productName = searchDict.get(rand.nextInt(searchDict.size()))
+        + " " + searchDict.get(rand.nextInt(searchDict.size()));
+    values.put("productName", new StringByteIterator(productName));
     values.put("productScore", new StringByteIterator(String.valueOf(1.0 - ThreadLocalRandom.current()
         .nextDouble())));
     values.put("code", new StringByteIterator(faker.code().ean13()));
