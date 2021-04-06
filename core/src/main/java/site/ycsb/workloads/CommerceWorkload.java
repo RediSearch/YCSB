@@ -80,9 +80,9 @@ public class CommerceWorkload extends CoreWorkload {
   private Random rand;
 
   public static String buildKeyName(long keynum, int zeropadding, boolean orderedinserts) {
-    if (!orderedinserts) {
-      keynum = Utils.hash(keynum);
-    }
+//    if (!orderedinserts) {
+//      keynum = Utils.hash(keynum);
+//    }
     String value = Long.toString(keynum);
     int fill = zeropadding - value.length();
     String prekey = "product";
