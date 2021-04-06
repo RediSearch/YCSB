@@ -445,13 +445,33 @@ public class ElasticsearchRestClient extends DB {
                        Vector<HashMap<String, ByteIterator>> result) {
     try {
       final Response response;
+//     {
+//  "query": {
+//    "bool": {
+//      "must": [{"term":{"productName":"feltcraft"} }, {"term":{"productName":"blue"} }]    }
+//  },
+//  "sort": [ {"productScore":{}} ],"size": 0,  "track_total_hits": true
+//}
+
       try (XContentBuilder builder = jsonBuilder()) {
         builder.startObject();
         builder.startObject("query");
+        builder.startObject("bool");
+        builder.startArray("must");
+        builder.startObject();
         builder.startObject("term");
         builder.field("productName", queryPair.getValue1().split(" ")[0]);
         builder.endObject();
         builder.endObject();
+        builder.startObject();
+        builder.startObject("term");
+        builder.field("productName", queryPair.getValue1().split(" ")[1]);
+        builder.endObject();
+        builder.endObject();
+        builder.endArray();
+        builder.endObject();
+        builder.endObject();
+        // sorting
         builder.startArray("sort");
         builder.startObject();
         builder.startObject("productScore");
