@@ -172,7 +172,7 @@ public class RediSearchClient extends DB {
   private List<String> commerceWorkloadIndexCreateCmdArgs(String iName) {
     List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
         "NOFIELDS", "NOFREQS", "NOOFFSETS",
-        "SCHEMA", "productScore", "NUMERIC", "SORTABLE"));
+        "SCHEMA", "productScore", "NUMERIC", "SORTABLE", "NOINDEX"));
     Iterator iterator = commerceTagFields.iterator();
 //    while (iterator.hasNext()) {
 //      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TAG")));
