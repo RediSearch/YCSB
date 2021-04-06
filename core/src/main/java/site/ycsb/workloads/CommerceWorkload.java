@@ -452,6 +452,9 @@ public class CommerceWorkload extends CoreWorkload {
       break;
     case "productName":
       textquerytosearch = searchDict.get(rand.nextInt(searchDict.size()));
+      while (textquerytosearch.split(" ").length < 2){
+        textquerytosearch = searchDict.get(rand.nextInt(searchDict.size()));
+      }
       break;
     case "productDescription":
       textquerytosearch = faker.company().catchPhrase().split(" ")[0];
