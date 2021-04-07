@@ -96,6 +96,7 @@ DATABASES = {
     "rados"        : "site.ycsb.db.RadosClient",
     "redis"        : "site.ycsb.db.RedisClient",
     "redisearch"   : "site.ycsb.db.RediSearchClient",
+    "redisjson2"   : "site.ycsb.db.RedisJSONClient",
     "rest"         : "site.ycsb.webservice.rest.RestClient",
     "riak"         : "site.ycsb.db.riak.RiakKVClient",
     "rocksdb"      : "site.ycsb.db.rocksdb.RocksDBClient",

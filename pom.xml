@@ -201,6 +201,7 @@ LICENSE file.
     <module>rados</module>
     <module>redis</module>
     <module>redisearch</module>
+    <module>redisjson2</module>
     <module>rest</module>
     <module>riak</module>
     <module>rocksdb</module>
