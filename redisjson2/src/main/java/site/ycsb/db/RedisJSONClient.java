@@ -257,7 +257,7 @@ public class RedisJSONClient extends DB {
     Status res = Status.OK;
     try (Jedis j = getResource(key)) {
       if (fields == null) {
-        j.sendCommand(RedisJSONCommands.GET, key, "$");
+        j.sendCommand(RedisJSONCommands.GET, key);
 //        TODO: process results
       } else {
         ArrayList<String> jsonGetCommandArgs = new ArrayList<>(Arrays.asList(key));
@@ -302,7 +302,16 @@ public class RedisJSONClient extends DB {
   public Status update(String table, String key,
                        Map<String, ByteIterator> values) {
     try (Jedis j = getResource(key)) {
-      j.sendCommand(RedisJSONCommands.SET, key, "$", convert(StringByteIterator.getStringMap(values)));
+      ArrayList<String> jsonGetCommandArgs = new ArrayList<>(Arrays.asList(key));
+      // using iterators
+      Iterator<Map.Entry<String, ByteIterator>> itr = values.entrySet().iterator();
+      Gson gson = new Gson();
+      while (itr.hasNext()) {
+        Map.Entry<String, ByteIterator> entry = itr.next();
+        jsonGetCommandArgs.add("$");
+        jsonGetCommandArgs.add(convert(Collections.singletonMap(entry.getKey(), String.valueOf(entry.getValue()))));
+      }
+      j.sendCommand(RedisJSONCommands.SET, jsonGetCommandArgs.toArray(String[]::new));
       return Status.OK;
     } catch (Exception e) {
       return Status.ERROR;
