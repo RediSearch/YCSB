@@ -284,7 +284,11 @@ public class RedisJSONClient extends DB {
       values.put(rangeField, new StringByteIterator(String.valueOf(hash(key))));
     }
     try (Jedis j = getResource(key)) {
-      j.sendCommand(RedisJSONCommands.SET, key, "$", convert(StringByteIterator.getStringMap(values)));
+      String pss = String.valueOf(values.get("productScore"));
+      values.remove("productScore");
+      String partialJson = convert(StringByteIterator.getStringMap(values));
+      partialJson = "{\"productScore\": " + pss + " , " + partialJson.substring(1);
+      j.sendCommand(RedisJSONCommands.SET, key, "$", partialJson);
       return Status.OK;
     } catch (Exception e) {
       return Status.ERROR;
