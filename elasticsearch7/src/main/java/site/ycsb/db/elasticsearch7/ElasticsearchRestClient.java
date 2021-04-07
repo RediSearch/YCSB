@@ -50,7 +50,7 @@ public class ElasticsearchRestClient extends DB {
   private static final String DEFAULT_REMOTE_HOST = "localhost:9200";
   private static final int NUMBER_OF_SHARDS = 1;
   private static final int NUMBER_OF_REPLICAS = 0;
-  private static final boolean INDEX_QUERY_CACHE_ENABLED_DEFAULT = false;
+  private static final boolean INDEX_QUERY_CACHE_ENABLED_DEFAULT = true;
   private static final String INDEX_QUERY_CACHE_ENABLED_PROPERTY = "es.queries.cache.enabled";
   private static final String CONTENT_TYPE_APPLICATION_JSON = ContentType.APPLICATION_JSON.toString();
   private RestClient restClient;
