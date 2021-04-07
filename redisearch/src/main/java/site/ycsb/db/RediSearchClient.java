@@ -60,8 +60,8 @@ public class RediSearchClient extends DB {
   public static final String CLIENT_POOL_MAX_PROPERTY_DEFAULT = "1";
   public static final String RESULT_PROCESS_PROPERTY = "redisearch.enable.resultprocess";
   public static final String RESULT_PROCESS_PROPERTY_DEFAULT = "true";
-
-
+  private static final boolean INDEX_HASHES_ENABLED_PROPERTY_DEFAULT = true;
+  private static final String INDEX_HASHES_ENABLED_PROPERTY = "redisearch.indexdocs";
   private JedisCluster jedisCluster;
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
@@ -83,6 +83,9 @@ public class RediSearchClient extends DB {
     int port = Protocol.DEFAULT_PORT;
     String host = Protocol.DEFAULT_HOST;
     int timeout = Protocol.DEFAULT_TIMEOUT;
+
+    final boolean indexingHashesEnabled = Boolean.parseBoolean(props.getProperty(INDEX_HASHES_ENABLED_PROPERTY,
+        String.valueOf(INDEX_HASHES_ENABLED_PROPERTY_DEFAULT)));
 
     String redisTimeoutStr = props.getProperty(TIMEOUT_PROPERTY);
     String password = props.getProperty(PASSWORD_PROPERTY);
@@ -130,41 +133,42 @@ public class RediSearchClient extends DB {
     fieldPrefix = props.getProperty(
         CoreWorkload.FIELD_NAME_PREFIX, CoreWorkload.FIELD_NAME_PREFIX_DEFAULT);
 
-
-    try (Jedis setupPoolConn = getResource()) {
-      coreWorkload = props.getProperty("workload").compareTo("site.ycsb.workloads.CoreWorkload") == 0;
-      if (coreWorkload) {
-        setupPoolConn.sendCommand(RediSearchCommands.CREATE,
-            coreWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
-      } else {
-        commerceTagFields = new TreeSet<>();
-        commerceTextFields = new TreeSet<>();
-        nonIndexFields = new TreeSet<>();
-        String[] tagFields = props.getProperty(INDEXED_TAG_FIELDS_PROPERTY,
-            INDEXED_TAG_FIELDS_PROPERTY_DEFAULT).split(",");
-        if (tagFields.length > 0) {
-          for (String tagFieldName : tagFields
-          ) {
-            commerceTagFields.add(tagFieldName);
+    if (indexingHashesEnabled) {
+      try (Jedis setupPoolConn = getResource()) {
+        coreWorkload = props.getProperty("workload").compareTo("site.ycsb.workloads.CoreWorkload") == 0;
+        if (coreWorkload) {
+          setupPoolConn.sendCommand(RediSearchCommands.CREATE,
+              coreWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
+        } else {
+          commerceTagFields = new TreeSet<>();
+          commerceTextFields = new TreeSet<>();
+          nonIndexFields = new TreeSet<>();
+          String[] tagFields = props.getProperty(INDEXED_TAG_FIELDS_PROPERTY,
+              INDEXED_TAG_FIELDS_PROPERTY_DEFAULT).split(",");
+          if (tagFields.length > 0) {
+            for (String tagFieldName : tagFields
+            ) {
+              commerceTagFields.add(tagFieldName);
+            }
           }
+          for (String textFieldName :
+              props.getProperty(INDEXED_TEXT_FIELDS_PROPERTY, INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT).split(",")
+          ) {
+            commerceTextFields.add(textFieldName);
+          }
+          for (String fieldName :
+              props.getProperty(CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY,
+                  CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT).split(",")
+          ) {
+            nonIndexFields.add(fieldName);
+          }
+          setupPoolConn.sendCommand(RediSearchCommands.CREATE,
+              commerceWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
         }
-        for (String textFieldName :
-            props.getProperty(INDEXED_TEXT_FIELDS_PROPERTY, INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT).split(",")
-        ) {
-          commerceTextFields.add(textFieldName);
+      } catch (redis.clients.jedis.exceptions.JedisDataException e) {
+        if (!e.getMessage().contains("Index already exists")) {
+          throw new DBException(e.getMessage());
         }
-        for (String fieldName :
-            props.getProperty(CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY,
-                CommerceWorkload.NON_INDEXED_FIELDS_SEARCH_PROPERTY_DEFAULT).split(",")
-        ) {
-          nonIndexFields.add(fieldName);
-        }
-        setupPoolConn.sendCommand(RediSearchCommands.CREATE,
-            commerceWorkloadIndexCreateCmdArgs(indexName).toArray(String[]::new));
-      }
-    } catch (redis.clients.jedis.exceptions.JedisDataException e) {
-      if (!e.getMessage().contains("Index already exists")) {
-        throw new DBException(e.getMessage());
       }
     }
   }
@@ -356,7 +360,7 @@ public class RediSearchClient extends DB {
     String query;
     if (commerceTextFields.contains(fieldName)) {
       String[] words = queryPair.getValue1().split(" ");
-      query = words[0] + " " + words [1];
+      query = words[0] + " " + words[1];
     } else {
       String tagValue = queryPair.getValue1().replaceAll(" ", "\\\\ ");
       query = String.format("@%s:{%s}", fieldName, tagValue);
