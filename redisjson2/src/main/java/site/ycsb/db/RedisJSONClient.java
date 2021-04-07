@@ -185,13 +185,16 @@ public class RedisJSONClient extends DB {
   }
 
   private List<String> commerceWorkloadIndexCreateCmdArgs(String iName) {
-    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "JSON",
+    List<String> args = new ArrayList<>(Arrays.asList(iName,
+        "ON", "JSON",
         "NOFIELDS", "NOFREQS", "NOOFFSETS",
-        "SCHEMA", "productScore", "NUMERIC", "SORTABLE", "NOINDEX"));
-    Iterator iterator = commerceTextFields.iterator();
-    while (iterator.hasNext()) {
-      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "NOSTEM", "SORTABLE")));
-    }
+        // we use the score field here given the current POC outputs
+        // wrongful logs on absence of score field definition
+        "SCORE_FIELD", "$.productScore",
+        "SCHEMA",
+        "$.productScore", "AS", "productScore", "NUMERIC", "SORTABLE", "NOINDEX",
+        "$.productName", "AS", "productName", "TEXT", "NOSTEM", "SORTABLE"));
+
     return args;
   }
 
