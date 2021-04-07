@@ -41,25 +41,23 @@ import java.util.concurrent.ThreadLocalRandom;
  * See {@code redisearch/README.md} for details.
  */
 public class RedisJSONClient extends DB {
-  public static final String HOST_PROPERTY = "redisearch.host";
-  public static final String PORT_PROPERTY = "redisearch.port";
-  public static final String PASSWORD_PROPERTY = "redisearch.password";
-  public static final String CLUSTER_PROPERTY = "redisearch.cluster";
-  public static final String CLUSTER_PROPERTY_DEFAULT = "redisearch.cluster";
-  public static final String TIMEOUT_PROPERTY = "redisearch.timeout";
-  public static final String INDEX_NAME_PROPERTY = "redisearch.indexname";
+  public static final String HOST_PROPERTY = "redis.host";
+  public static final String PORT_PROPERTY = "redis.port";
+  public static final String PASSWORD_PROPERTY = "redis.password";
+  public static final String CLUSTER_PROPERTY = "redis.cluster";
+  public static final String CLUSTER_PROPERTY_DEFAULT = "redis.cluster";
+  public static final String TIMEOUT_PROPERTY = "redis.timeout";
+  public static final String INDEX_NAME_PROPERTY = "redis.indexname";
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
-  public static final String RANGE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
+  public static final String RANGE_FIELD_NAME_PROPERTY = "redis.scorefield";
   public static final String RANGE_FIELD_NAME_PROPERTY_DEFAULT = "__doc_hash__";
-  public static final String INDEXED_TAG_FIELDS_PROPERTY = "redisearch.indexedtagfields";
-  //  public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "brand,department,color,inSale,inStock";
+  public static final String INDEXED_TAG_FIELDS_PROPERTY = "redis.indexedtagfields";
   public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "";
-  public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redisearch.indexedtextfields";
-  //  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
+  public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redis.indexedtextfields";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName";
-  public static final String CLIENT_POOL_MAX_PROPERTY = "redisearch.client.poolmaxsize";
+  public static final String CLIENT_POOL_MAX_PROPERTY = "redis.client.poolmaxsize";
   public static final String CLIENT_POOL_MAX_PROPERTY_DEFAULT = "1";
-  public static final String RESULT_PROCESS_PROPERTY = "redisearch.enable.resultprocess";
+  public static final String RESULT_PROCESS_PROPERTY = "redis.enable.resultprocess";
   public static final String RESULT_PROCESS_PROPERTY_DEFAULT = "true";
 
   private static final boolean INDEX_JSON_ENABLED_PROPERTY_DEFAULT = true;
@@ -69,7 +67,6 @@ public class RedisJSONClient extends DB {
   private JedisPool jedisPool;
   private Boolean clusterEnabled;
   private int fieldCount;
-  private String fieldPrefix;
   private String indexName;
   private String rangeField;
   private boolean orderedinserts;
@@ -146,9 +143,6 @@ public class RedisJSONClient extends DB {
 
     fieldCount = Integer.parseInt(props.getProperty(
         CoreWorkload.FIELD_COUNT_PROPERTY, CoreWorkload.FIELD_COUNT_PROPERTY_DEFAULT));
-    fieldPrefix = props.getProperty(
-        CoreWorkload.FIELD_NAME_PREFIX, CoreWorkload.FIELD_NAME_PREFIX_DEFAULT);
-
     if (indexingJsonEnabled) {
       try (Jedis setupPoolConn = getResource()) {
         coreWorkload = props.getProperty("workload").compareTo("site.ycsb.workloads.CoreWorkload") == 0;
@@ -194,18 +188,10 @@ public class RedisJSONClient extends DB {
     List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "JSON",
         "NOFIELDS", "NOFREQS", "NOOFFSETS",
         "SCHEMA", "productScore", "NUMERIC", "SORTABLE", "NOINDEX"));
-    Iterator iterator = commerceTagFields.iterator();
-//    while (iterator.hasNext()) {
-//      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TAG")));
-//    }
-    iterator = commerceTextFields.iterator();
+    Iterator iterator = commerceTextFields.iterator();
     while (iterator.hasNext()) {
       args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "NOSTEM", "SORTABLE")));
     }
-//    iterator = nonIndexFields.iterator();
-//    while (iterator.hasNext()) {
-//      args.addAll(new ArrayList<>(Arrays.asList(iterator.next().toString(), "TEXT", "NOINDEX")));
-//    }
     return args;
   }
 
@@ -233,7 +219,7 @@ public class RedisJSONClient extends DB {
    * @return
    */
   private List<String> coreWorkloadIndexCreateCmdArgs(String iName) {
-    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "HASH",
+    List<String> args = new ArrayList<>(Arrays.asList(iName, "ON", "JSON",
         "SCHEMA", rangeField, "NUMERIC", "SORTABLE"));
     return args;
   }
@@ -271,14 +257,15 @@ public class RedisJSONClient extends DB {
     Status res = Status.OK;
     try (Jedis j = getResource(key)) {
       if (fields == null) {
-        Map<String, String> reply = j.hgetAll(key);
-        extractHGetAllResults(result, reply);
+        j.sendCommand(RedisJSONCommands.GET, key, "$");
+//        TODO: process results
       } else {
-        List<String> reply = j.hmget(key, fields.toArray(new String[fields.size()]));
-        if (resultProcessing) {
-          extractHmGetResults(fields, result, reply);
-          res = result.isEmpty() ? Status.NOT_FOUND : Status.OK;
+        ArrayList<String> jsonGetCommandArgs = new ArrayList<>(Arrays.asList(key));
+        for (String field : fields) {
+          jsonGetCommandArgs.add("$." + field);
         }
+        j.sendCommand(RedisJSONCommands.GET, jsonGetCommandArgs.toArray(String[]::new));
+//        TODO: process results
       }
     } catch (Exception e) {
       res = Status.ERROR;
@@ -286,19 +273,6 @@ public class RedisJSONClient extends DB {
     return res;
   }
 
-  private void extractHGetAllResults(Map<String, ByteIterator> result, Map<String, String> reply) {
-    StringByteIterator.putAllAsByteIterators(result, reply);
-  }
-
-  private void extractHmGetResults(Set<String> fields, Map<String, ByteIterator> result, List<String> values) {
-    Iterator<String> fieldIterator = fields.iterator();
-    Iterator<String> valueIterator = values.iterator();
-
-    while (fieldIterator.hasNext() && valueIterator.hasNext()) {
-      result.put(fieldIterator.next(),
-          new StringByteIterator(valueIterator.next()));
-    }
-  }
 
   @Override
   public Status insert(String table, String key,
@@ -347,7 +321,8 @@ public class RedisJSONClient extends DB {
       resp = (List<Object>) j.sendCommand(RediSearchCommands.SEARCH,
           searchCommandArgs(indexName, queryPair, onlyinsale, pagePair, fields));
       if (resultProcessing) {
-        processFTSearchReply(result, resp);
+//        TODO: process json
+//        processFTSearchReply(result, resp);
       }
     } catch (Exception e) {
       throw e;
@@ -355,17 +330,6 @@ public class RedisJSONClient extends DB {
     return Status.OK;
   }
 
-  private void processFTSearchReply(Vector<HashMap<String, ByteIterator>> result, List<Object> resp) {
-    for (int i = 1; i < resp.size(); i += 2) {
-      List<byte[]> docFields = (List<byte[]>) resp.get(i + 1);
-      HashMap<String, ByteIterator> values = new HashMap<>();
-      for (int k = 2; k < docFields.size(); k += 2) {
-        values.put(SafeEncoder.encode(docFields.get(k)),
-            new StringByteIterator(SafeEncoder.encode(docFields.get(k + 1))));
-        result.add(values);
-      }
-    }
-  }
 
   private String[] searchCommandArgs(String idxName, Pair<String, String> queryPair, boolean onlyinsale,
                                      Pair<Integer, Integer> pagePair, HashSet<String> rFields) {
@@ -409,7 +373,7 @@ public class RedisJSONClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount,
                      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-    return Status.OK;
+    return Status.NOT_IMPLEMENTED;
   }
 
   /**
@@ -438,7 +402,8 @@ public class RedisJSONClient extends DB {
    */
   public enum RedisJSONCommands implements ProtocolCommand {
 
-    SET;
+    SET,
+    GET;
 
     private final byte[] raw;
 
