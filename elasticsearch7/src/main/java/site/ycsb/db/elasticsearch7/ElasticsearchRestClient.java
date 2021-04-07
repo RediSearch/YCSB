@@ -50,6 +50,8 @@ public class ElasticsearchRestClient extends DB {
   private static final String DEFAULT_REMOTE_HOST = "localhost:9200";
   private static final int NUMBER_OF_SHARDS = 1;
   private static final int NUMBER_OF_REPLICAS = 0;
+  private static final boolean INDEX_QUERY_CACHE_ENABLED_DEFAULT = false;
+  private static final String INDEX_QUERY_CACHE_ENABLED_PROPERTY = "es.queries.cache.enabled";
   private static final String CONTENT_TYPE_APPLICATION_JSON = ContentType.APPLICATION_JSON.toString();
   private RestClient restClient;
   private String indexKey;
@@ -103,6 +105,8 @@ public class ElasticsearchRestClient extends DB {
 
     final int numberOfShards = parseIntegerProperty(props, "es.number_of_shards", NUMBER_OF_SHARDS);
     final int numberOfReplicas = parseIntegerProperty(props, "es.number_of_replicas", NUMBER_OF_REPLICAS);
+    final boolean queryCacheEnabled = Boolean.parseBoolean(props.getProperty(INDEX_QUERY_CACHE_ENABLED_PROPERTY,
+        String.valueOf(INDEX_QUERY_CACHE_ENABLED_DEFAULT)));
 
     final Boolean newIndex = Boolean.parseBoolean(props.getProperty("es.new_index", "false"));
 
@@ -166,7 +170,7 @@ public class ElasticsearchRestClient extends DB {
         builder.field("index.number_of_shards", numberOfShards);
         builder.field("index.number_of_replicas", numberOfReplicas);
         builder.field("index.refresh_interval", "-1");
-        builder.field("index.queries.cache.enabled", false);
+        builder.field("index.queries.cache.enabled", queryCacheEnabled);
         //   }
         builder.endObject();
         // }
