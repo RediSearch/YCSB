@@ -188,9 +188,6 @@ public class RedisJSONClient extends DB {
     List<String> args = new ArrayList<>(Arrays.asList(iName,
         "ON", "JSON",
         "NOFIELDS", "NOFREQS", "NOOFFSETS",
-        // we use the score field here given the current POC outputs
-        // wrongful logs on absence of score field definition
-        "SCORE_FIELD", "$.productScore",
         "SCHEMA",
         "$.productScore", "AS", "productScore", "NUMERIC", "SORTABLE", "NOINDEX",
         "$.productName", "AS", "productName", "TEXT", "NOSTEM", "SORTABLE"));
