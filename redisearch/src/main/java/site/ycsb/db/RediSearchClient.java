@@ -40,12 +40,14 @@ import java.util.concurrent.ThreadLocalRandom;
  * See {@code redisearch/README.md} for details.
  */
 public class RediSearchClient extends DB {
-  public static final String HOST_PROPERTY = "redisearch.host";
-  public static final String PORT_PROPERTY = "redisearch.port";
-  public static final String PASSWORD_PROPERTY = "redisearch.password";
-  public static final String CLUSTER_PROPERTY = "redisearch.cluster";
-  public static final String CLUSTER_PROPERTY_DEFAULT = "redisearch.cluster";
-  public static final String TIMEOUT_PROPERTY = "redisearch.timeout";
+  public static final String HOST_PROPERTY = "redis.host";
+  public static final String PORT_PROPERTY = "redis.port";
+  public static final String PASSWORD_PROPERTY = "redis.password";
+  public static final String CLUSTER_PROPERTY = "redis.cluster";
+  public static final String CLUSTER_PROPERTY_DEFAULT = "false";
+  public static final String TIMEOUT_PROPERTY = "redis.timeout";
+  public static final String CLIENT_POOL_MAX_PROPERTY = "redis.client.poolmaxsize";
+  public static final String CLIENT_POOL_MAX_PROPERTY_DEFAULT = "1";
   public static final String INDEX_NAME_PROPERTY = "redisearch.indexname";
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
   public static final String RANGE_FIELD_NAME_PROPERTY = "redisearch.scorefield";
@@ -56,8 +58,6 @@ public class RediSearchClient extends DB {
   public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redisearch.indexedtextfields";
   //  public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName,productDescription";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName";
-  public static final String CLIENT_POOL_MAX_PROPERTY = "redisearch.client.poolmaxsize";
-  public static final String CLIENT_POOL_MAX_PROPERTY_DEFAULT = "1";
   public static final String RESULT_PROCESS_PROPERTY = "redisearch.enable.resultprocess";
   public static final String RESULT_PROCESS_PROPERTY_DEFAULT = "true";
   private static final boolean INDEX_HASHES_ENABLED_PROPERTY_DEFAULT = true;
@@ -89,7 +89,7 @@ public class RediSearchClient extends DB {
 
     String redisTimeoutStr = props.getProperty(TIMEOUT_PROPERTY);
     String password = props.getProperty(PASSWORD_PROPERTY);
-    clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
+    clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY, CLUSTER_PROPERTY_DEFAULT));
     resultProcessing = Boolean.parseBoolean(props.getProperty(RESULT_PROCESS_PROPERTY,
         RESULT_PROCESS_PROPERTY_DEFAULT));
     String portString = props.getProperty(PORT_PROPERTY);

@@ -45,8 +45,10 @@ public class RedisJSONClient extends DB {
   public static final String PORT_PROPERTY = "redis.port";
   public static final String PASSWORD_PROPERTY = "redis.password";
   public static final String CLUSTER_PROPERTY = "redis.cluster";
-  public static final String CLUSTER_PROPERTY_DEFAULT = "redis.cluster";
+  public static final String CLUSTER_PROPERTY_DEFAULT = "false";
   public static final String TIMEOUT_PROPERTY = "redis.timeout";
+  public static final String CLIENT_POOL_MAX_PROPERTY = "redis.client.poolmaxsize";
+  public static final String CLIENT_POOL_MAX_PROPERTY_DEFAULT = "1";
   public static final String INDEX_NAME_PROPERTY = "redis.indexname";
   public static final String INDEX_NAME_PROPERTY_DEFAULT = "index";
   public static final String RANGE_FIELD_NAME_PROPERTY = "redis.scorefield";
@@ -55,8 +57,6 @@ public class RedisJSONClient extends DB {
   public static final String INDEXED_TAG_FIELDS_PROPERTY_DEFAULT = "";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY = "redis.indexedtextfields";
   public static final String INDEXED_TEXT_FIELDS_PROPERTY_DEFAULT = "productName";
-  public static final String CLIENT_POOL_MAX_PROPERTY = "redis.client.poolmaxsize";
-  public static final String CLIENT_POOL_MAX_PROPERTY_DEFAULT = "1";
   public static final String RESULT_PROCESS_PROPERTY = "redis.enable.resultprocess";
   public static final String RESULT_PROCESS_PROPERTY_DEFAULT = "true";
 
@@ -100,7 +100,7 @@ public class RedisJSONClient extends DB {
 
     String redisTimeoutStr = props.getProperty(TIMEOUT_PROPERTY);
     String password = props.getProperty(PASSWORD_PROPERTY);
-    clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY));
+    clusterEnabled = Boolean.parseBoolean(props.getProperty(CLUSTER_PROPERTY, CLUSTER_PROPERTY_DEFAULT));
     resultProcessing = Boolean.parseBoolean(props.getProperty(RESULT_PROCESS_PROPERTY,
         RESULT_PROCESS_PROPERTY_DEFAULT));
     String portString = props.getProperty(PORT_PROPERTY);
