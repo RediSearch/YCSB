@@ -42,8 +42,8 @@ maxsearchlength=20
 minsearchlength=3
 
 readproportion=0.15
-searchproportion=0.55
-updateproportion=0.30
+searchproportion=0.45
+updateproportion=0.40
 insertproportion=0.0
 scanproportion=0
 readmodifywriteproportion=0
